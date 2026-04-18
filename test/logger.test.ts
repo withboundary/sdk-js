@@ -118,6 +118,59 @@ describe("createBoundaryLogger", () => {
     expect(captured).toHaveLength(1);
   });
 
+  it("stamps model from logger options onto every event", async () => {
+    const captured: BoundaryLogEvent[] = [];
+    const logger = createBoundaryLogger({
+      write: async (events) => {
+        captured.push(...events);
+      },
+      flushOnExit: false,
+      batch: { size: 1, intervalMs: 0, maxQueueSize: 100 },
+      model: "gpt-4o",
+    });
+    if (!logger) throw new Error("logger should not be null");
+    const contract = defineContract({ name: "model-default", schema: Schema, logger });
+    await contract.accept(async () => JSON.stringify({ tier: "hot", score: 95 }));
+    await logger.flush(100);
+    expect(captured[0]!.model).toBe("gpt-4o");
+  });
+
+  it("per-call model override wins over logger default", async () => {
+    const captured: BoundaryLogEvent[] = [];
+    const logger = createBoundaryLogger({
+      write: async (events) => {
+        captured.push(...events);
+      },
+      flushOnExit: false,
+      batch: { size: 1, intervalMs: 0, maxQueueSize: 100 },
+      model: "gpt-4o",
+    });
+    if (!logger) throw new Error("logger should not be null");
+    const contract = defineContract({ name: "model-override", schema: Schema, logger });
+    await contract.accept(
+      async () => JSON.stringify({ tier: "hot", score: 95 }),
+      { model: "claude-haiku-4-5" },
+    );
+    await logger.flush(100);
+    expect(captured[0]!.model).toBe("claude-haiku-4-5");
+  });
+
+  it("emits rulesCount reflecting the contract's rule list", async () => {
+    const { logger, captured } = setup();
+    const contract = defineContract({
+      name: "rules-count",
+      schema: Schema,
+      logger,
+      rules: [
+        (d) => d.score >= 0 || "score negative",
+        (d) => d.tier !== "cold" || "cold not allowed",
+      ],
+    });
+    await contract.accept(async () => JSON.stringify({ tier: "hot", score: 95 }));
+    await logger.flush(100);
+    expect(captured[0]!.rulesCount).toBe(2);
+  });
+
   it("shutdown is idempotent", async () => {
     const { logger } = setup();
     await logger.shutdown(50);

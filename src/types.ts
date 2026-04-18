@@ -27,6 +27,15 @@ export interface BoundaryLogEvent {
   input?: unknown;
   output?: unknown;
 
+  // Name of the LLM that produced the output, e.g. "gpt-4o", "claude-haiku".
+  // Stamped from the logger default or a per-call override passed via
+  // `contract.accept(run, { model })`.
+  model?: string;
+
+  // Number of rules defined on the contract at runtime. Latest-seen — the
+  // backend can use the most recent event's value as the canonical count.
+  rulesCount?: number;
+
   // SDK metadata — stamped by @withboundary/sdk so the backend can attribute
   // events to a specific SDK version and runtime when debugging issues.
   sdk?: {
@@ -82,6 +91,11 @@ export interface BoundaryLoggerOptions {
   apiKey?: string;
   environment?: string;
   endpoint?: string; // Default: "https://api.withboundary.com"
+
+  // Default LLM model label stamped onto every event as `event.model`.
+  // Override per-call via `contract.accept(run, { model })` when a single
+  // logger is shared across multiple models.
+  model?: string;
 
   capture?: Partial<CapturePolicy>;
   redact?: RedactionOptions;
