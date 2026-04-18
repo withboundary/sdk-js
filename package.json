@@ -1,0 +1,64 @@
+{
+  "name": "@withboundary/sdk",
+  "version": "0.1.0",
+  "description": "Observability SDK for Boundary — batched trace transport for LLM contract runs.",
+  "license": "MIT",
+  "homepage": "https://withboundary.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/withboundary/sdk-js.git"
+  },
+  "keywords": [
+    "llm",
+    "observability",
+    "tracing",
+    "boundary",
+    "correctness",
+    "openai",
+    "anthropic"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "changeset": "changeset",
+    "release": "pnpm run build && changeset publish",
+    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run build"
+  },
+  "peerDependencies": {
+    "@withboundary/contract": "^1.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@withboundary/contract": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.8",
+    "@types/node": "^22",
+    "@withboundary/contract": "file:../contract-js",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0",
+    "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
