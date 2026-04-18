@@ -51,7 +51,7 @@
   "devDependencies": {
     "@changesets/cli": "^2.29.8",
     "@types/node": "^22",
-    "@withboundary/contract": "file:../contract-js",
+    "@withboundary/contract": "^1.1.0",
     "tsup": "^8.5.1",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0",
