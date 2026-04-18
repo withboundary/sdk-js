@@ -57,6 +57,7 @@ export function createBoundaryLogger<T = unknown>(
 
   const capture = resolveCapture(options.capture);
   const environment = options.environment;
+  const defaultModel = options.model;
   const onError = options.onError ?? defaultOnError;
   const beforeSend = options.beforeSend;
   const sdkMeta = {
@@ -121,6 +122,8 @@ export function createBoundaryLogger<T = unknown>(
         latestRepairs: [],
         latestCategory: undefined,
         latestIssues: undefined,
+        rulesCount: ctx.rulesCount,
+        model: ctx.model ?? defaultModel,
       });
     },
     onRepairGenerated(ctx) {
@@ -151,6 +154,8 @@ export function createBoundaryLogger<T = unknown>(
           state?.latestRepairs && state.latestRepairs.length > 0
             ? state.latestRepairs
             : undefined,
+        model: state?.model ?? defaultModel,
+        rulesCount: state?.rulesCount,
       });
       runState.delete(ctx.contractName);
     },
@@ -168,6 +173,8 @@ export function createBoundaryLogger<T = unknown>(
           state?.latestRepairs && state.latestRepairs.length > 0
             ? state.latestRepairs
             : undefined,
+        model: state?.model ?? defaultModel,
+        rulesCount: state?.rulesCount,
       });
       runState.delete(ctx.contractName);
     },
@@ -187,6 +194,11 @@ interface RunState {
   latestRepairs: Message[];
   latestCategory: string | undefined;
   latestIssues: string[] | undefined;
+  rulesCount: number;
+  // Effective model for this run — per-call override (ctx.model from
+  // contract.accept({ model })) or the logger's default. Undefined means
+  // neither was set, in which case we omit the field from the event.
+  model: string | undefined;
 }
 
 interface BuildTransportArgs {

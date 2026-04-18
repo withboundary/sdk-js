@@ -15,8 +15,8 @@ importers:
         specifier: ^22
         version: 22.19.17
       '@withboundary/contract':
-        specifier: ^1.1.0
-        version: 1.1.0
+        specifier: ^1.2.0
+        version: 1.2.0
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.5.10)(typescript@5.9.3)
@@ -588,8 +588,8 @@ packages:
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
 
-  '@withboundary/contract@1.1.0':
-    resolution: {integrity: sha512-UGyjC2JppY9nR6Z0b79QcsBRkajtJrZQRZfT+s9i4JFO3qrnn0VBKSyVpzOawGZH2gtZdmhChpdpG9EeAr1UhQ==}
+  '@withboundary/contract@1.2.0':
+    resolution: {integrity: sha512-ekUDwBKn1kDnKrBYuKLfsFH+Z8EAtA3scuyAX6Ws6A+NUK5RG0mlWGpjUFgoEMfR5//hXtXy162z1L7bMv7Tkg==}
     engines: {node: '>=18'}
 
   acorn@8.16.0:
@@ -1683,7 +1683,7 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 1.2.0
 
-  '@withboundary/contract@1.1.0':
+  '@withboundary/contract@1.2.0':
     dependencies:
       zod: 3.25.76
 
