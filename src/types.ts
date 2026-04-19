@@ -1,4 +1,11 @@
 // Public types for @withboundary/sdk.
+
+// The canonical environment labels the product recognises today. Typed as a
+// union so common typos (`"prod"`, `"stage"`, `"stg"`) can't silently fragment
+// the dashboard into mystery buckets. Widen this when custom environments
+// become a real product feature — the wire format (BoundaryLogEvent below)
+// stays `string` so the server can accept future names without an SDK bump.
+export type BoundaryEnvironment = "production" | "staging" | "development";
 //
 // `BoundaryLogEvent` is re-exported from @withboundary/contract so the two
 // packages share one definition; we import it as a type-only import and fall
@@ -89,7 +96,7 @@ export interface BoundaryLoggerOptions {
   // Connection — at least one of apiKey or write must be present, or the
   // logger returns null (a no-op for safe dev use).
   apiKey?: string;
-  environment?: string;
+  environment?: BoundaryEnvironment;
   endpoint?: string; // Default: "https://api.withboundary.com"
 
   // Default LLM model label stamped onto every event as `event.model`.
