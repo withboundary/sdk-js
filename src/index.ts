@@ -1,6 +1,7 @@
 export { createBoundaryLogger, type BoundaryLogger } from "./logger.js";
 
 export type {
+  BoundaryEnvironment,
   BoundaryLoggerOptions,
   BoundaryLogEvent,
   CapturePolicy,
