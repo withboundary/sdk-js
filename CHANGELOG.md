@@ -1,5 +1,23 @@
 # @withboundary/sdk
 
+## 0.3.0
+
+### Minor Changes
+
+- f8e1d5f: Stamp `model` and `rulesCount` onto every BoundaryLogEvent.
+
+  - `BoundaryLoggerOptions.model` sets a default LLM model label on every event. Useful for single-model apps.
+  - Per-call override flows through from `contract.accept(run, { model })` in `@withboundary/contract@^1.2.0`.
+  - `rulesCount` is populated from the contract's `rules` array at runtime.
+
+  Bumps the peer dependency on `@withboundary/contract` to `^1.2.0` to pick up the updated `onRunStart` hook contract (`rulesCount` + `model`).
+
+- e46bd6f: Narrow `BoundaryLoggerOptions.environment` from `string` to a `BoundaryEnvironment` union of the canonical labels: `"production" | "staging" | "development"`. Stops silent dashboard fragmentation from typos like `"prod"`, `"stage"`, or `"stg"`, and gives callers autocomplete.
+
+  The wire format (`BoundaryLogEvent.environment`) stays `string` so the server can accept future labels without an SDK bump. Widening `BoundaryEnvironment` later, when custom environments land as a real product feature, is also a minor bump.
+
+  Breaking for TypeScript users that were passing arbitrary strings; runtime behavior is unchanged.
+
 ## 0.2.0
 
 ### Minor Changes
