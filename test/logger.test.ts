@@ -62,7 +62,7 @@ describe("createBoundaryLogger", () => {
     await logger.flush(100);
     expect(captured).toHaveLength(1);
     expect(captured[0]!.ok).toBe(false);
-    expect(captured[0]!.category).toBe("INVARIANT_ERROR");
+    expect(captured[0]!.category).toBe("RULE_ERROR");
     expect(captured[0]!.issues).toEqual(["score too low"]);
   });
 
