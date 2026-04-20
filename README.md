@@ -1,5 +1,8 @@
 # @withboundary/sdk
 
+[![npm version](https://img.shields.io/npm/v/@withboundary/sdk.svg)](https://www.npmjs.com/package/@withboundary/sdk)
+[![license](https://img.shields.io/npm/l/@withboundary/sdk.svg)](https://github.com/withboundary/sdk-js/blob/main/LICENSE)
+
 Observability SDK for [Boundary](https://withboundary.com) — ships LLM contract runs to the Boundary cloud dashboard with batching, retries, and redaction.
 
 Pairs with [`@withboundary/contract`](https://github.com/withboundary/contract-js) — the correctness engine.
