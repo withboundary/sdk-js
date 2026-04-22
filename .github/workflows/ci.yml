@@ -27,7 +27,7 @@ jobs:
 
       # No `version:` — pnpm is pinned via `packageManager` in package.json
       # so the two sources can't disagree.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v4
         with:
