@@ -23,7 +23,7 @@ jobs:
         # Matches what Sentry/Datadog SDKs test against.
         node: [18, 20, 22]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # No `version:` — pnpm is pinned via `packageManager` in package.json
       # so the two sources can't disagree.
