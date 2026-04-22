@@ -176,4 +176,74 @@ describe("createBoundaryLogger", () => {
     await logger.shutdown(50);
     await logger.shutdown(50); // should not throw
   });
+
+  it("forwards schema + rules from onRunStart ctx onto terminal events", async () => {
+    const { logger, captured } = setup();
+    const schema = [
+      { name: "score", type: "number", constraints: "min:0,max:100" },
+      { name: "tier", type: "enum", constraints: "hot|warm|cold" },
+    ];
+    const rules = [
+      { name: "score_range", fields: ["score"], description: "score must be 0-100" },
+      { name: "hot_requires_high_score", fields: ["tier", "score"] },
+    ];
+
+    // Simulate a contract that emits schema + rules on its first onRunStart
+    // and then a successful terminal event. sdk-js should stamp both on the
+    // outbound BoundaryLogEvent.
+    logger.onRunStart?.({
+      contractName: "lead-scoring",
+      maxAttempts: 3,
+      rulesCount: 2,
+      retry: { maxAttempts: 3, backoff: "none", baseMs: 0 },
+      // Cast to unknown first — these fields are forward-looking and not yet
+      // declared on the installed @withboundary/contract peer.
+      schema,
+      rules,
+    } as unknown as Parameters<NonNullable<typeof logger.onRunStart>>[0]);
+    logger.onRunSuccess?.({
+      contractName: "lead-scoring",
+      attempts: 1,
+      data: { tier: "hot", score: 95 },
+      totalDurationMs: 12,
+    });
+
+    await logger.flush(100);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.schema).toEqual(schema);
+    expect(captured[0]!.rules).toEqual(rules);
+  });
+
+  it("forwards failed rule names as ruleFailures on terminal failure events", async () => {
+    const { logger, captured } = setup();
+    logger.onRunStart?.({
+      contractName: "rule-attribution",
+      maxAttempts: 1,
+      rulesCount: 2,
+      retry: { maxAttempts: 1, backoff: "none", baseMs: 0 },
+    });
+    logger.onVerifyFailure?.({
+      contractName: "rule-attribution",
+      attempt: 1,
+      category: "RULE_ERROR",
+      issues: ["score too low", "tier mismatch"],
+      durationMs: 5,
+      // Forward-looking field, not yet on the installed contract peer.
+      ruleIssues: [
+        { rule: { name: "score_range" }, message: "score too low" },
+        { rule: { name: "tier_mismatch", fields: ["tier"] }, message: "tier mismatch" },
+      ],
+    } as unknown as Parameters<NonNullable<typeof logger.onVerifyFailure>>[0]);
+    logger.onRunFailure?.({
+      contractName: "rule-attribution",
+      attempts: 1,
+      category: "RULE_ERROR",
+      message: "two rules failed",
+      totalDurationMs: 5,
+    });
+
+    await logger.flush(100);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.ruleFailures).toEqual(["score_range", "tier_mismatch"]);
+  });
 });

@@ -6,10 +6,26 @@
 // become a real product feature — the wire format (BoundaryLogEvent below)
 // stays `string` so the server can accept future names without an SDK bump.
 export type BoundaryEnvironment = "production" | "staging" | "development";
-//
-// `BoundaryLogEvent` is re-exported from @withboundary/contract so the two
-// packages share one definition; we import it as a type-only import and fall
-// back to an identical local definition when the peer isn't installed.
+
+// Flat description of a contract's output schema. Emitted once per contract
+// so the backend can populate `contracts.schema_json`. Mirrors the identical
+// type in @withboundary/contract — kept local so this package can stand on
+// its own when contract-js isn't installed (the peer dep is optional).
+export interface SchemaField {
+  name: string;
+  type: string;
+  constraints?: string;
+}
+
+// Wire shape for a rule. Emitted once per contract so the backend can
+// upsert the `rules` table by (contract_id, name). Mirrored from
+// @withboundary/contract; see the note above for why it's duplicated.
+export interface RuleDefinition {
+  name: string;
+  expression?: string;
+  description?: string;
+  fields?: string[];
+}
 
 export interface BoundaryLogEvent {
   // identity
@@ -26,6 +42,9 @@ export interface BoundaryLogEvent {
   // failure details (capture.errors, default ON)
   category?: string;
   issues?: string[];
+  // Rule names that failed on this attempt. Lets the backend attribute
+  // failures to specific rules (joins to rule_failure_counts.rule_key).
+  ruleFailures?: string[];
 
   // repair context (capture.repairs, default ON)
   repairs?: Array<{ role: string; content: string }>;
@@ -42,6 +61,12 @@ export interface BoundaryLogEvent {
   // Number of rules defined on the contract at runtime. Latest-seen — the
   // backend can use the most recent event's value as the canonical count.
   rulesCount?: number;
+
+  // Contract shape metadata. Emitted on the first event per contract per
+  // process; backend COALESCEs into contracts.schema_json and upserts rules
+  // by (contract_id, name). Safe to re-send but wasteful.
+  schema?: SchemaField[];
+  rules?: RuleDefinition[];
 
   // SDK metadata — stamped by @withboundary/sdk so the backend can attribute
   // events to a specific SDK version and runtime when debugging issues.

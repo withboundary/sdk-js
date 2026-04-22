@@ -6,6 +6,8 @@ export type {
   BoundaryLogEvent,
   CapturePolicy,
   RedactionOptions,
+  RuleDefinition,
+  SchemaField,
   Transport,
 } from "./types.js";
 

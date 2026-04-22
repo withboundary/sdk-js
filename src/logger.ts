@@ -1,4 +1,11 @@
 import type { ContractLogger, Message } from "@withboundary/contract";
+
+// contract-js hook ctx extensions used here; kept local until the peer
+// package declares them publicly so sdk-js can build against either version.
+type RunStartCtxExtras = { schema?: SchemaField[]; rules?: RuleDefinition[] };
+type VerifyFailureCtxExtras = {
+  ruleIssues?: Array<{ rule: { name: string; fields?: string[] }; message: string }>;
+};
 import { Batcher } from "./batcher.js";
 import { applyCapture, resolveCapture } from "./capture.js";
 import { defaultOnError } from "./errors.js";
@@ -11,6 +18,8 @@ import type { Transport } from "./transport/types.js";
 import type {
   BoundaryLogEvent,
   BoundaryLoggerOptions,
+  RuleDefinition,
+  SchemaField,
 } from "./types.js";
 import { SDK_NAME, SDK_VERSION } from "./version.js";
 
@@ -117,13 +126,17 @@ export function createBoundaryLogger<T = unknown>(
 
   return {
     onRunStart(ctx) {
+      const extras = ctx as typeof ctx & RunStartCtxExtras;
       runState.set(ctx.contractName, {
         maxAttempts: ctx.maxAttempts,
         latestRepairs: [],
         latestCategory: undefined,
         latestIssues: undefined,
+        latestRuleFailures: undefined,
         rulesCount: ctx.rulesCount,
         model: ctx.model ?? defaultModel,
+        schema: extras.schema,
+        rules: extras.rules,
       });
     },
     onRepairGenerated(ctx) {
@@ -136,10 +149,14 @@ export function createBoundaryLogger<T = unknown>(
       }
     },
     onVerifyFailure(ctx) {
+      const extras = ctx as typeof ctx & VerifyFailureCtxExtras;
       const state = runState.get(ctx.contractName);
       if (state) {
         state.latestCategory = ctx.category;
         state.latestIssues = ctx.issues;
+        state.latestRuleFailures = extras.ruleIssues
+          ? extras.ruleIssues.map((issue) => issue.rule.name)
+          : undefined;
       }
     },
     onRunSuccess(ctx) {
@@ -156,6 +173,8 @@ export function createBoundaryLogger<T = unknown>(
             : undefined,
         model: state?.model ?? defaultModel,
         rulesCount: state?.rulesCount,
+        schema: state?.schema,
+        rules: state?.rules,
       });
       runState.delete(ctx.contractName);
     },
@@ -169,12 +188,15 @@ export function createBoundaryLogger<T = unknown>(
         durationMs: ctx.totalDurationMs,
         category: ctx.category ?? state?.latestCategory,
         issues: state?.latestIssues,
+        ruleFailures: state?.latestRuleFailures,
         repairs:
           state?.latestRepairs && state.latestRepairs.length > 0
             ? state.latestRepairs
             : undefined,
         model: state?.model ?? defaultModel,
         rulesCount: state?.rulesCount,
+        schema: state?.schema,
+        rules: state?.rules,
       });
       runState.delete(ctx.contractName);
     },
@@ -194,11 +216,20 @@ interface RunState {
   latestRepairs: Message[];
   latestCategory: string | undefined;
   latestIssues: string[] | undefined;
+  // Rule names that failed on the most recent attempt, extracted from the
+  // structured ruleIssues on onVerifyFailure. Forwarded as `ruleFailures`
+  // so the backend can join on rule_failure_counts.rule_key.
+  latestRuleFailures: string[] | undefined;
   rulesCount: number;
   // Effective model for this run — per-call override (ctx.model from
   // contract.accept({ model })) or the logger's default. Undefined means
   // neither was set, in which case we omit the field from the event.
   model: string | undefined;
+  // Contract shape metadata — populated once per contract per process on the
+  // first onRunStart that carries it; the sdk then forwards it on every
+  // subsequent terminal event until the state is cleared at run end.
+  schema: SchemaField[] | undefined;
+  rules: RuleDefinition[] | undefined;
 }
 
 interface BuildTransportArgs {
