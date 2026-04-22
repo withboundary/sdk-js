@@ -52,7 +52,13 @@ describe("createBoundaryLogger", () => {
       name: "failing-contract",
       schema: Schema,
       retry: { maxAttempts: 1 },
-      rules: [(d) => d.score >= 90 || "score too low"],
+      rules: [
+        {
+          name: "score_threshold",
+          fields: ["score"],
+          check: (d) => d.score >= 90 || "score too low",
+        },
+      ],
       logger,
     });
     const result = await contract.accept(async () =>
@@ -162,8 +168,16 @@ describe("createBoundaryLogger", () => {
       schema: Schema,
       logger,
       rules: [
-        (d) => d.score >= 0 || "score negative",
-        (d) => d.tier !== "cold" || "cold not allowed",
+        {
+          name: "score_nonnegative",
+          fields: ["score"],
+          check: (d) => d.score >= 0 || "score negative",
+        },
+        {
+          name: "tier_not_cold",
+          fields: ["tier"],
+          check: (d) => d.tier !== "cold" || "cold not allowed",
+        },
       ],
     });
     await contract.accept(async () => JSON.stringify({ tier: "hot", score: 95 }));
