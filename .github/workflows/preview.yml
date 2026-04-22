@@ -1,0 +1,39 @@
+name: Preview release
+
+# Publishes every PR to pkg.pr.new so reviewers can install the built
+# artifact without waiting for a changeset release. Especially useful
+# when validating a contract-js preview end-to-end — install this SDK
+# from its PR URL alongside a contract-js PR URL to test the pair.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # pkg.pr.new posts the install URL as a PR comment.
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - run: pnpm dlx pkg-pr-new publish

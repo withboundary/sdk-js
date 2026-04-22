@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel older runs on the same ref when a new commit lands — no point
+# finishing an obsolete build.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Node ${{ matrix.node }}
@@ -44,3 +50,14 @@ jobs:
         run: |
           test -f dist/index.js || (echo "dist/index.js missing" && exit 1)
           test -f dist/index.d.ts || (echo "dist/index.d.ts missing" && exit 1)
+
+  # Single aggregate check for branch protection. Point the required status
+  # check at `ci-ok` and the matrix can evolve without touching settings.
+  ci-ok:
+    if: always()
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs passed
+        if: needs.test.result != 'success'
+        run: exit 1
