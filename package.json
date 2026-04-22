@@ -1,6 +1,6 @@
 {
   "name": "@withboundary/sdk",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Observability SDK for Boundary — batched trace transport for LLM contract runs.",
   "license": "MIT",
   "homepage": "https://withboundary.com",
