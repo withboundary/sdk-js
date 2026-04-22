@@ -16,7 +16,7 @@ importers:
         version: 22.19.17
       '@withboundary/contract':
         specifier: ^1.3.0
-        version: 1.3.0
+        version: 1.4.0(zod@3.25.76)
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.5.10)(typescript@5.9.3)
@@ -588,9 +588,11 @@ packages:
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
 
-  '@withboundary/contract@1.3.0':
-    resolution: {integrity: sha512-a9ZHCnVjekkd3NOBtwg9AiSWUOagS+1KQCcmUKFaSX54Zdyt/Mv5MhwugA5AKLEzMNoFJOlumY/u0rj/F3l7lw==}
+  '@withboundary/contract@1.4.0':
+    resolution: {integrity: sha512-dnLONGxzMhXNZ6x9sn+adZj8mPUDJOpVTRqmKF/anbjJwrDV882OL2Tjf0+wA/G0iubsFRkLl+JbQK+fVBOrtA==}
     engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
 
   acorn@8.16.0:
     resolution: {integrity: sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw==}
@@ -1683,7 +1685,7 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 1.2.0
 
-  '@withboundary/contract@1.3.0':
+  '@withboundary/contract@1.4.0(zod@3.25.76)':
     dependencies:
       zod: 3.25.76
 
