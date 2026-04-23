@@ -99,7 +99,16 @@ export function createBoundaryLogger<T = unknown>(
       ...partial,
     };
     const gated = applyCapture(event, capture);
-    const scrubbed = redact(gated, options.redact);
+    const { event: scrubbed, redactedFields } = redact(gated, options.redact);
+
+    // Stamp the resolved capture policy + any scrubbed leaf field names onto
+    // the event. Done after redact so the dashboard can distinguish "off by
+    // config" from "captured but empty" and render [REDACTED] rows
+    // authoritatively instead of inferring.
+    scrubbed.capture = {
+      ...capture,
+      ...(redactedFields.length > 0 && { redactedFields }),
+    };
 
     // User's last-chance hook. A null return drops the event. Exceptions
     // in beforeSend route through onError so a bad user fn never breaks

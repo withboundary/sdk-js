@@ -19,28 +19,32 @@ function baseEvent(overrides: Partial<BoundaryLogEvent> = {}): BoundaryLogEvent 
 describe("redact", () => {
   it("returns input unchanged when no options", () => {
     const e = baseEvent({ input: { email: "a@b.co" } });
-    expect(redact(e, undefined)).toBe(e);
+    const result = redact(e, undefined);
+    expect(result.event).toBe(e);
+    expect(result.redactedFields).toEqual([]);
   });
 
-  it("scrubs named fields deeply", () => {
+  it("scrubs named fields deeply and reports them", () => {
     const e = baseEvent({
       input: { user: { email: "a@b.co", id: 42, nested: { ssn: "111-22-3333" } } },
       output: { email: "c@d.co" },
     });
-    const out = redact(e, { fields: ["email", "ssn"] });
+    const { event: out, redactedFields } = redact(e, { fields: ["email", "ssn"] });
     expect((out.input as { user: { email: unknown } }).user.email).toBe(REDACTED);
     expect(
       (out.input as { user: { nested: { ssn: unknown } } }).user.nested.ssn,
     ).toBe(REDACTED);
     expect((out.output as { email: unknown }).email).toBe(REDACTED);
+    expect(redactedFields).toEqual(["email", "ssn"]);
   });
 
-  it("applies regex patterns to string values", () => {
+  it("applies regex patterns to string values and reports the containing field", () => {
     const e = baseEvent({
       output: "SSN is 111-22-3333 and again 111-22-3333 end",
     });
-    const out = redact(e, { patterns: [/\b\d{3}-\d{2}-\d{4}\b/g] });
+    const { event: out, redactedFields } = redact(e, { patterns: [/\b\d{3}-\d{2}-\d{4}\b/g] });
     expect(out.output).toBe(`SSN is ${REDACTED} and again ${REDACTED} end`);
+    expect(redactedFields).toEqual(["output"]);
   });
 
   it("invokes custom redactor with path", () => {
@@ -52,7 +56,6 @@ describe("redact", () => {
         return value;
       },
     });
-    // Leaves include contractName, timestamp, attempt, ..., input.a, input.b.c, etc.
     const inputPaths = calls.filter((c) => c.path[0] === "input").map((c) => c.path.join("."));
     expect(inputPaths).toContain("input.a");
     expect(inputPaths).toContain("input.b.c");

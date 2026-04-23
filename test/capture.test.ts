@@ -28,16 +28,18 @@ describe("resolveCapture", () => {
     const policy = resolveCapture({ inputs: true });
     expect(policy.inputs).toBe(true);
     expect(policy.outputs).toBe(false);
-    expect(policy.metadata).toBe(true);
+    expect(policy.repairs).toBe(true);
   });
 });
 
 describe("applyCapture", () => {
-  it("keeps metadata always", () => {
-    const out = applyCapture(ev(), { ...DEFAULT_CAPTURE });
+  it("keeps structural metadata and failure attribution unconditionally", () => {
+    const out = applyCapture(ev(), resolveCapture({ inputs: false, outputs: false, repairs: false }));
     expect(out.contractName).toBe("t");
     expect(out.attempt).toBe(1);
     expect(out.durationMs).toBe(5);
+    expect(out.category).toBe("VALIDATION_ERROR");
+    expect(out.issues).toEqual(["bad value"]);
   });
 
   it("drops input/output by default", () => {
@@ -53,12 +55,6 @@ describe("applyCapture", () => {
     );
     expect(out.input).toEqual({ prompt: "hello" });
     expect(out.output).toEqual({ answer: "world" });
-  });
-
-  it("drops errors when capture.errors = false", () => {
-    const out = applyCapture(ev(), resolveCapture({ errors: false }));
-    expect(out.category).toBeUndefined();
-    expect(out.issues).toBeUndefined();
   });
 
   it("drops repairs when capture.repairs = false", () => {
