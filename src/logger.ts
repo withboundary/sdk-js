@@ -122,13 +122,19 @@ export function createBoundaryLogger<T = unknown>(
 
   // Per-run scratch space keyed by contractName. The contract library
   // interleaves hooks in order (onAttemptStart → onRawOutput → onVerify* →
-  // onRunSuccess/Failure), so a single mutable slot per contract is enough —
-  // we track the latest category/issues/repairs before the terminal event.
+  // onRetryScheduled → … → onRunSuccess/Failure), all serial within one
+  // run. A single mutable slot per contract is enough — we track the
+  // latest category/issues/repairs/output and emit a per-attempt event in
+  // onRetryScheduled (non-terminal failures) plus a terminal event in
+  // onRunSuccess/Failure.
   const runState = new Map<string, RunState>();
 
   return {
     onRunStart(ctx) {
       runState.set(ctx.contractName, {
+        runId: createRunId(),
+        startedAt: nowMs(),
+        attemptStartedAt: nowMs(),
         maxAttempts: ctx.maxAttempts,
         latestRepairs: [],
         latestCategory: undefined,
@@ -151,6 +157,7 @@ export function createBoundaryLogger<T = unknown>(
       const state = runState.get(ctx.contractName);
       if (state) {
         state.latestInput = ctx.instructions;
+        state.attemptStartedAt = nowMs();
       }
     },
     onCleanedOutput(ctx) {
@@ -191,9 +198,51 @@ export function createBoundaryLogger<T = unknown>(
           : undefined;
       }
     },
+    onRetryScheduled(ctx) {
+      // Non-terminal failure that's about to be retried. Emit a per-attempt
+      // event with all the data we accumulated for this attempt: failed
+      // output, failed rules, and the repair message we're about to send to
+      // the model. Then reset per-attempt scratch so the next attempt's
+      // snapshot starts clean.
+      const state = runState.get(ctx.contractName);
+      if (!state) return;
+      emit({
+        runId: state.runId,
+        final: false,
+        contractName: ctx.contractName,
+        attempt: ctx.attempt,
+        maxAttempts: state.maxAttempts,
+        ok: false,
+        durationMs: nowMs() - state.attemptStartedAt,
+        input: state.latestInput,
+        output: state.latestOutput,
+        category: ctx.category ?? state.latestCategory,
+        issues: state.latestIssues,
+        ruleFailures: state.latestRuleFailures,
+        repairs:
+          state.latestRepairs && state.latestRepairs.length > 0
+            ? state.latestRepairs
+            : undefined,
+        model: state.model ?? defaultModel,
+        rulesCount: state.rulesCount,
+        schema: state.schema,
+        rules: state.rules,
+      });
+      // Reset per-attempt accumulators so the next attempt's data doesn't
+      // leak into either subsequent per-attempt events or the terminal one.
+      // Schema/rules/runId/model persist for the run's lifetime.
+      state.latestOutput = undefined;
+      state.latestIssues = undefined;
+      state.latestRuleFailures = undefined;
+      state.latestCategory = undefined;
+      state.latestRepairs = [];
+      // latestInput resets when the next onAttemptStart fires.
+    },
     onRunSuccess(ctx) {
       const state = runState.get(ctx.contractName);
       emit({
+        runId: state?.runId ?? createRunId(),
+        final: true,
         contractName: ctx.contractName,
         attempt: ctx.attempts,
         maxAttempts: state?.maxAttempts ?? ctx.attempts,
@@ -215,6 +264,8 @@ export function createBoundaryLogger<T = unknown>(
     onRunFailure(ctx) {
       const state = runState.get(ctx.contractName);
       emit({
+        runId: state?.runId ?? createRunId(),
+        final: true,
         contractName: ctx.contractName,
         attempt: ctx.attempts,
         maxAttempts: state?.maxAttempts ?? ctx.attempts,
@@ -251,6 +302,14 @@ export function createBoundaryLogger<T = unknown>(
 }
 
 interface RunState {
+  // Stable id for this run. Generated in onRunStart and stamped on every
+  // event we emit for the run (per-attempt + terminal) so the backend can
+  // coalesce them into one run row.
+  runId: string;
+  // Wall-clock starts for per-attempt durationMs. attemptStartedAt is reset
+  // each onAttemptStart and consumed by onRetryScheduled.
+  startedAt: number;
+  attemptStartedAt: number;
   maxAttempts: number;
   latestRepairs: Message[];
   latestCategory: string | undefined;
@@ -310,6 +369,42 @@ function buildTransport({ apiKey, options }: BuildTransportArgs): Transport {
 function getEnv(name: string): string | undefined {
   const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
   return proc?.env?.[name];
+}
+
+// Stable id stamped on every event emitted for a single `accept()` call.
+// Used by the receiving backend purely as an idempotency / grouping key —
+// it is not an auth credential. Authentication and tenant isolation belong
+// to whatever transport layer carries the events (an API key on the HTTP
+// transport, the host process on a custom `write` sink), never to the
+// runId itself.
+function createRunId(): string {
+  return `bnd_run_${randomBase62(21)}`;
+}
+
+const NANOID_ALPHABET =
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
+
+function randomBase62(len: number): string {
+  // Use crypto.getRandomValues when available (browser, Node ≥18 globally).
+  // Bytes mod alphabet length is biased for non-power-of-two alphabets, but
+  // for 64 chars we're fine — alphabet length divides 256 evenly. For other
+  // lengths the bias is negligible at this id size.
+  const bytes = new Uint8Array(len);
+  const cryptoObj = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  if (cryptoObj?.getRandomValues) {
+    cryptoObj.getRandomValues(bytes);
+  } else {
+    // Last-resort fallback for ancient runtimes. Quality is enough for an
+    // idempotency key; the runId is not a security boundary.
+    for (let i = 0; i < len; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  let out = "";
+  for (let i = 0; i < len; i++) out += NANOID_ALPHABET[bytes[i]! & 63];
+  return out;
+}
+
+function nowMs(): number {
+  return Date.now();
 }
 
 function detectRuntime(): string | undefined {
