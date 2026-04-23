@@ -102,7 +102,7 @@ describe("createBoundaryLogger", () => {
     expect(captured.map((e) => e.contractName)).toEqual(["keep"]);
   });
 
-  it("redact scrubs matched fields", async () => {
+  it("redact scrubs matched fields in captured output", async () => {
     const captured: BoundaryLogEvent[] = [];
     const logger = createBoundaryLogger({
       write: async (events) => {
@@ -117,11 +117,72 @@ describe("createBoundaryLogger", () => {
     const contract = defineContract({ name: "redacted", schema: Schema, logger });
     await contract.accept(async () => JSON.stringify({ tier: "hot", score: 95 }));
     await logger.flush(100);
-    // The output field should have tier redacted; note that in the current
-    // logger impl we don't emit output from onRunSuccess (output flow is a
-    // separate enrichment), so this test mainly asserts the logger doesn't
-    // crash when redact is configured.
     expect(captured).toHaveLength(1);
+    // tier was on the validated output and should now be redacted; score
+    // wasn't on the redact field list and should pass through.
+    const out = captured[0]!.output as { tier?: unknown; score?: number };
+    expect(out).toBeDefined();
+    expect(out.tier).toBe("[REDACTED]");
+    expect(out.score).toBe(95);
+    expect(captured[0]!.capture?.redactedFields).toContain("tier");
+  });
+
+  it("populates input + output from contract hooks when opted in", async () => {
+    const captured: BoundaryLogEvent[] = [];
+    const logger = createBoundaryLogger({
+      write: async (events) => {
+        captured.push(...events);
+      },
+      flushOnExit: false,
+      batch: { size: 1, intervalMs: 0, maxQueueSize: 100 },
+      capture: { inputs: true, outputs: true },
+    });
+    if (!logger) throw new Error("logger should not be null");
+    const contract = defineContract({
+      name: "input-output",
+      schema: Schema,
+      logger,
+    });
+    await contract.accept(async () => JSON.stringify({ tier: "hot", score: 95 }));
+    await logger.flush(100);
+
+    expect(captured).toHaveLength(1);
+    // Input is the schema-derived prompt the contract instructed the model
+    // with on the (only) attempt — exact string is contract's business but
+    // it should be a non-empty string when capture.inputs is on.
+    expect(typeof captured[0]!.input).toBe("string");
+    expect((captured[0]!.input as string).length).toBeGreaterThan(0);
+    // Output is the validated typed value from the run.
+    expect(captured[0]!.output).toEqual({ tier: "hot", score: 95 });
+  });
+
+  it("populates output even on validation failure (cleaned, pre-validated)", async () => {
+    const captured: BoundaryLogEvent[] = [];
+    const logger = createBoundaryLogger({
+      write: async (events) => {
+        captured.push(...events);
+      },
+      flushOnExit: false,
+      batch: { size: 1, intervalMs: 0, maxQueueSize: 100 },
+      capture: { outputs: true },
+    });
+    if (!logger) throw new Error("logger should not be null");
+    const contract = defineContract({
+      name: "fails-validation",
+      schema: Schema,
+      retry: { maxAttempts: 1 },
+      logger,
+    });
+    // tier is not in the enum — schema rejects, but the cleaned object
+    // should still surface so users can debug what the model actually said.
+    await contract.accept(async () =>
+      JSON.stringify({ tier: "scalding", score: 50 }),
+    );
+    await logger.flush(100);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.ok).toBe(false);
+    expect(captured[0]!.output).toEqual({ tier: "scalding", score: 50 });
   });
 
   it("stamps event.capture with the resolved policy", async () => {
