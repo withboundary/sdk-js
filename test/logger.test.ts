@@ -185,6 +185,131 @@ describe("createBoundaryLogger", () => {
     expect(captured[0]!.output).toEqual({ tier: "scalding", score: 50 });
   });
 
+  // ─── Per-attempt streaming ─────────────────────────────────────────────────
+
+  it("emits exactly one terminal event for a 1-attempt success", async () => {
+    const { logger, captured } = setup();
+    const contract = defineContract({ name: "single", schema: Schema, logger });
+    await contract.accept(async () => JSON.stringify({ tier: "hot", score: 95 }));
+    await logger.flush(100);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.final).toBe(true);
+    expect(captured[0]!.ok).toBe(true);
+    expect(captured[0]!.runId).toMatch(/^bnd_run_[A-Za-z0-9_-]{21}$/);
+  });
+
+  it("emits N events for a N-attempt repaired success — all sharing one runId", async () => {
+    const { logger, captured } = setup();
+    const contract = defineContract({
+      name: "repaired",
+      schema: Schema,
+      retry: { maxAttempts: 3, backoff: "none" },
+      logger,
+    });
+    let call = 0;
+    // Attempt 1: bad enum + bad score (validation fails). Attempt 2: ok.
+    await contract.accept(async () => {
+      call++;
+      if (call === 1) return JSON.stringify({ tier: "scalding", score: 200 });
+      return JSON.stringify({ tier: "hot", score: 95 });
+    });
+    await logger.flush(100);
+
+    expect(captured).toHaveLength(2);
+    const [perAttempt, terminal] = captured;
+    expect(perAttempt!.final).toBe(false);
+    expect(perAttempt!.ok).toBe(false);
+    expect(perAttempt!.attempt).toBe(1);
+    expect(terminal!.final).toBe(true);
+    expect(terminal!.ok).toBe(true);
+    expect(terminal!.attempt).toBe(2);
+    // Stable runId: same on per-attempt and terminal.
+    expect(perAttempt!.runId).toBe(terminal!.runId);
+  });
+
+  it("per-attempt event carries the failed attempt's output + ruleFailures", async () => {
+    const captured: BoundaryLogEvent[] = [];
+    const logger = createBoundaryLogger({
+      write: async (events) => {
+        captured.push(...events);
+      },
+      flushOnExit: false,
+      batch: { size: 1, intervalMs: 0, maxQueueSize: 100 },
+      capture: { outputs: true },
+    });
+    if (!logger) throw new Error("logger should not be null");
+    const contract = defineContract({
+      name: "rule-fail-then-pass",
+      schema: Schema,
+      retry: { maxAttempts: 3, backoff: "none" },
+      rules: [
+        {
+          name: "score_threshold",
+          fields: ["score"],
+          check: (d) => d.score >= 90 || "score too low",
+        },
+      ],
+      logger,
+    });
+    let call = 0;
+    await contract.accept(async () => {
+      call++;
+      // Attempt 1: schema-valid, rule-fails. Attempt 2: passes.
+      if (call === 1) return JSON.stringify({ tier: "warm", score: 50 });
+      return JSON.stringify({ tier: "hot", score: 95 });
+    });
+    await logger.flush(100);
+
+    expect(captured).toHaveLength(2);
+    const perAttempt = captured[0]!;
+    expect(perAttempt.final).toBe(false);
+    expect(perAttempt.output).toEqual({ tier: "warm", score: 50 });
+    expect(perAttempt.ruleFailures).toEqual(["score_threshold"]);
+    expect(perAttempt.category).toBe("RULE_ERROR");
+  });
+
+  it("emits N events for a N-attempt failure (max retries exhausted)", async () => {
+    const { logger, captured } = setup();
+    const contract = defineContract({
+      name: "always-fails",
+      schema: Schema,
+      retry: { maxAttempts: 3, backoff: "none" },
+      logger,
+    });
+    await contract.accept(async () =>
+      JSON.stringify({ tier: "scalding", score: 200 }),
+    );
+    await logger.flush(100);
+
+    expect(captured).toHaveLength(3);
+    const runId = captured[0]!.runId;
+    expect(captured.every((e) => e.runId === runId)).toBe(true);
+    expect(captured[0]!.final).toBe(false);
+    expect(captured[1]!.final).toBe(false);
+    expect(captured[2]!.final).toBe(true);
+    expect(captured[2]!.ok).toBe(false);
+    expect(captured.map((e) => e.attempt)).toEqual([1, 2, 3]);
+  });
+
+  it("each per-attempt event re-asserts its own attempt number", async () => {
+    const { logger, captured } = setup();
+    const contract = defineContract({
+      name: "numbered",
+      schema: Schema,
+      retry: { maxAttempts: 3, backoff: "none" },
+      logger,
+    });
+    let call = 0;
+    await contract.accept(async () => {
+      call++;
+      if (call < 3) return JSON.stringify({ tier: "scalding", score: 200 });
+      return JSON.stringify({ tier: "hot", score: 95 });
+    });
+    await logger.flush(100);
+
+    expect(captured.map((e) => e.attempt)).toEqual([1, 2, 3]);
+  });
+
   it("stamps event.capture with the resolved policy", async () => {
     const { logger, captured } = setup();
     const contract = defineContract({ name: "capture-stamp", schema: Schema, logger });

@@ -12,6 +12,8 @@ function ev(n = 1): BoundaryLogEvent {
   return {
     contractName: "t",
     timestamp: new Date().toISOString(),
+    runId: `bnd_run_${n.toString().padStart(21, "0")}`,
+    final: true,
     attempt: 1,
     maxAttempts: 3,
     ok: true,

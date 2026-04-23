@@ -33,10 +33,28 @@ export interface BoundaryLogEvent {
   environment?: string;
   timestamp: string; // ISO 8601
 
+  // Stable per-run id — `bnd_run_<nanoid>`. Generated once per `accept()`
+  // call and stamped on every event for that run (per-attempt + terminal),
+  // so the backend coalesces them into a single run row keyed by
+  // (organizationId, runId). Required: a run without an id can't survive
+  // multi-event streaming on the backend.
+  runId: string;
+
+  // Terminal flag — `true` on the last event of a run (onRunSuccess /
+  // onRunFailure), `false` on per-attempt failure events emitted between
+  // them. The backend uses it to decide when to enqueue trace-processing
+  // enrichment (terminal events only — per-attempt would double-count).
+  final: boolean;
+
   // run metadata — always sent. Boundary can't represent a run without these.
+  // `attempt` is the attempt this event reflects:
+  //   - per-attempt event (final=false): the attempt that just failed
+  //   - terminal event (final=true): the final attempt count for the run
   attempt: number;
   maxAttempts: number;
   ok: boolean;
+  // Per-attempt event: duration of just this attempt.
+  // Terminal event: total duration across all attempts.
   durationMs: number;
 
   // Failure attribution — always sent. Category/issues/ruleFailures are the
