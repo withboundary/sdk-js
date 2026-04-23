@@ -134,11 +134,43 @@ export function createBoundaryLogger<T = unknown>(
         latestCategory: undefined,
         latestIssues: undefined,
         latestRuleFailures: undefined,
+        latestInput: undefined,
+        latestOutput: undefined,
         rulesCount: ctx.rulesCount,
         model: ctx.model ?? defaultModel,
         schema: ctx.schema,
         rules: ctx.rules,
       });
+    },
+    onAttemptStart(ctx) {
+      // The schema-derived (and repair-augmented) prompt the contract sends
+      // to the model on this attempt. This is the closest single artifact to
+      // "what was sent in" that the SDK can observe without intercepting
+      // the user's RunFn — store it as the candidate `input` and let
+      // applyCapture decide whether it ships.
+      const state = runState.get(ctx.contractName);
+      if (state) {
+        state.latestInput = ctx.instructions;
+      }
+    },
+    onCleanedOutput(ctx) {
+      // First viable snapshot of the model's output: parsed JSON (or coerced
+      // value), pre-validation. Cheaper to keep than the raw string and
+      // matches what users typically want to inspect on validation failures.
+      // Overridden by onVerifySuccess below when the run succeeds.
+      const state = runState.get(ctx.contractName);
+      if (state) {
+        state.latestOutput = ctx.cleaned;
+      }
+    },
+    onVerifySuccess(ctx) {
+      // Prefer the typed/validated payload over the raw cleaned value when
+      // the run accepts — same data, but post-coercion. This is what the
+      // user's app would actually consume.
+      const state = runState.get(ctx.contractName);
+      if (state) {
+        state.latestOutput = ctx.data;
+      }
     },
     onRepairGenerated(ctx) {
       const state = runState.get(ctx.contractName);
@@ -167,6 +199,8 @@ export function createBoundaryLogger<T = unknown>(
         maxAttempts: state?.maxAttempts ?? ctx.attempts,
         ok: true,
         durationMs: ctx.totalDurationMs,
+        input: state?.latestInput,
+        output: state?.latestOutput ?? ctx.data,
         repairs:
           state?.latestRepairs && state.latestRepairs.length > 0
             ? state.latestRepairs
@@ -186,6 +220,11 @@ export function createBoundaryLogger<T = unknown>(
         maxAttempts: state?.maxAttempts ?? ctx.attempts,
         ok: false,
         durationMs: ctx.totalDurationMs,
+        input: state?.latestInput,
+        // On failure we ship the last cleaned output we saw — usually from
+        // the final attempt that triggered this terminal failure. Helps the
+        // user see *what* the model produced on the way to giving up.
+        output: state?.latestOutput,
         category: ctx.category ?? state?.latestCategory,
         issues: state?.latestIssues,
         ruleFailures: state?.latestRuleFailures,
@@ -220,6 +259,14 @@ interface RunState {
   // structured ruleIssues on onVerifyFailure. Forwarded as `ruleFailures`
   // so the backend can join on rule_failure_counts.rule_key.
   latestRuleFailures: string[] | undefined;
+  // Latest prompt the SDK saw the contract send to the model. Captured on
+  // onAttemptStart from ctx.instructions — the schema- (and repair-)
+  // augmented system prompt. Gated by capture.inputs at emit time.
+  latestInput: unknown;
+  // Latest cleaned/typed model output: ctx.cleaned from onCleanedOutput,
+  // upgraded to the validated ctx.data on onVerifySuccess. Gated by
+  // capture.outputs at emit time.
+  latestOutput: unknown;
   rulesCount: number;
   // Effective model for this run — per-call override (ctx.model from
   // contract.accept({ model })) or the logger's default. Undefined means
