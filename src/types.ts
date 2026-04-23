@@ -33,20 +33,22 @@ export interface BoundaryLogEvent {
   environment?: string;
   timestamp: string; // ISO 8601
 
-  // run metadata (capture.metadata, default ON)
+  // run metadata — always sent. Boundary can't represent a run without these.
   attempt: number;
   maxAttempts: number;
   ok: boolean;
   durationMs: number;
 
-  // failure details (capture.errors, default ON)
+  // Failure attribution — always sent. Category/issues/ruleFailures are the
+  // structural answer to "what broke" and ride alongside metadata because
+  // they have the same size and privacy profile (rule names + short messages,
+  // not user data).
   category?: string;
   issues?: string[];
-  // Rule names that failed on this attempt. Lets the backend attribute
-  // failures to specific rules (joins to rule_failure_counts.rule_key).
   ruleFailures?: string[];
 
-  // repair context (capture.repairs, default ON)
+  // repair context (capture.repairs, default ON — separate toggle because
+  // repair message content frequently quotes output verbatim)
   repairs?: Array<{ role: string; content: string }>;
 
   // raw data (both default OFF — opt-in only)
@@ -75,25 +77,30 @@ export interface BoundaryLogEvent {
     version: string;
     runtime?: string;
   };
+
+  // Resolved capture policy stamped on every event so the dashboard can
+  // distinguish "off by config" from "captured but empty" — very different
+  // failure modes. `redactedFields` lists leaf field names the SDK scrubbed
+  // before send (from the redact.fields config); the dashboard uses it to
+  // render "[REDACTED]" rows authoritatively instead of inferring.
+  capture?: CapturePolicy & { redactedFields?: string[] };
 }
 
-// Which buckets of data the SDK is allowed to ship. Conservative defaults
-// intentionally leave raw LLM inputs/outputs off — they're the most sensitive
-// payloads and shouldn't leave the process without an explicit opt-in.
+// Which optional data the SDK is allowed to ship. Structural run metadata
+// (contract name, attempt, duration, ok, category, issues, rule failures) is
+// sent unconditionally — it's the minimum Boundary needs to show a run at
+// all. The flags here govern the three data buckets that can contain
+// user/LLM content and therefore deserve opt-in.
 export interface CapturePolicy {
-  inputs: boolean;
-  outputs: boolean;
-  repairs: boolean;
-  errors: boolean;
-  metadata: boolean;
+  inputs: boolean;   // user → model data              (default OFF)
+  outputs: boolean;  // model → boundary data           (default OFF)
+  repairs: boolean;  // boundary → model retry messages (default ON)
 }
 
 export const DEFAULT_CAPTURE: CapturePolicy = {
   inputs: false,
   outputs: false,
   repairs: true,
-  errors: true,
-  metadata: true,
 };
 
 // Redaction runs right before events leave the process. All three layers are
