@@ -8,6 +8,8 @@ function baseEvent(overrides: Partial<BoundaryLogEvent> = {}): BoundaryLogEvent 
   return {
     contractName: "t",
     timestamp: "2026-04-18T00:00:00Z",
+    runId: "bnd_run_FiReTjAHAfr4ihQEGG2Ys",
+    final: true,
     attempt: 1,
     maxAttempts: 3,
     ok: true,
