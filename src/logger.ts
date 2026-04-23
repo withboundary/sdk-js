@@ -1,11 +1,4 @@
 import type { ContractLogger, Message } from "@withboundary/contract";
-
-// contract-js hook ctx extensions used here; kept local until the peer
-// package declares them publicly so sdk-js can build against either version.
-type RunStartCtxExtras = { schema?: SchemaField[]; rules?: RuleDefinition[] };
-type VerifyFailureCtxExtras = {
-  ruleIssues?: Array<{ rule: { name: string; fields?: string[] }; message: string }>;
-};
 import { Batcher } from "./batcher.js";
 import { applyCapture, resolveCapture } from "./capture.js";
 import { defaultOnError } from "./errors.js";
@@ -135,7 +128,6 @@ export function createBoundaryLogger<T = unknown>(
 
   return {
     onRunStart(ctx) {
-      const extras = ctx as typeof ctx & RunStartCtxExtras;
       runState.set(ctx.contractName, {
         maxAttempts: ctx.maxAttempts,
         latestRepairs: [],
@@ -144,8 +136,8 @@ export function createBoundaryLogger<T = unknown>(
         latestRuleFailures: undefined,
         rulesCount: ctx.rulesCount,
         model: ctx.model ?? defaultModel,
-        schema: extras.schema,
-        rules: extras.rules,
+        schema: ctx.schema,
+        rules: ctx.rules,
       });
     },
     onRepairGenerated(ctx) {
@@ -158,13 +150,12 @@ export function createBoundaryLogger<T = unknown>(
       }
     },
     onVerifyFailure(ctx) {
-      const extras = ctx as typeof ctx & VerifyFailureCtxExtras;
       const state = runState.get(ctx.contractName);
       if (state) {
         state.latestCategory = ctx.category;
         state.latestIssues = ctx.issues;
-        state.latestRuleFailures = extras.ruleIssues
-          ? extras.ruleIssues.map((issue) => issue.rule.name)
+        state.latestRuleFailures = ctx.ruleIssues
+          ? ctx.ruleIssues.map((issue) => issue.rule.name)
           : undefined;
       }
     },
