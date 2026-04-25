@@ -20,8 +20,10 @@ jobs:
       fail-fast: false
       matrix:
         # Lowest supported (engines.node) + current LTS + latest stable.
-        # Matches what Sentry/Datadog SDKs test against.
-        node: [18, 20, 22]
+        # Mirrors @withboundary/contract-js. Node 18 was dropped — its
+        # LTS ended 2025-04-30 and several dev-only deps (vitest 4+,
+        # rolldown) already use Node-20-only APIs (`node:util.styleText`).
+        node: [20, 22, 24]
     steps:
       - uses: actions/checkout@v6
 

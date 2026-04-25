@@ -9,8 +9,11 @@ import { CustomTransport, MultiTransport } from "./transport/custom.js";
 import { HttpTransport } from "./transport/http.js";
 import type { Transport } from "./transport/types.js";
 import type {
+  AcceptedEvent,
   BoundaryLogEvent,
+  BoundaryLogEventBase,
   BoundaryLoggerOptions,
+  FailedEvent,
   RuleDefinition,
   SchemaField,
 } from "./types.js";
@@ -83,14 +86,21 @@ export function createBoundaryLogger<T = unknown>(
     : () => undefined;
 
   // Build an event from a run result (success or failure) and push to the
-  // batcher. Centralized here so onRunSuccess / onRunFailure agree on shape.
-  const emit = (partial: Omit<BoundaryLogEvent, "timestamp" | "sdk">): void => {
-    const event: BoundaryLogEvent = {
+  // batcher. The Omit-on-union is distributed by TypeScript, so the call
+  // site narrows naturally on the `ok` literal — the compiler refuses an
+  // accepted partial that carries failure metadata or vice versa.
+  type EmitPartial =
+    | Omit<AcceptedEvent, "timestamp" | "sdk">
+    | Omit<FailedEvent, "timestamp" | "sdk">;
+  const emit = (partial: EmitPartial): void => {
+    const base = {
       timestamp: new Date().toISOString(),
       environment,
       sdk: sdkMeta,
-      ...partial,
     };
+    const event: BoundaryLogEvent = partial.ok
+      ? { ...base, ...partial }
+      : { ...base, ...partial };
     const gated = applyCapture(event, capture);
     const { event: scrubbed, redactedFields } = redact(gated, options.redact);
 
@@ -120,44 +130,74 @@ export function createBoundaryLogger<T = unknown>(
     batcher.enqueue(final);
   };
 
-  // Per-run scratch space keyed by contractName. The contract library
-  // interleaves hooks in order (onAttemptStart → onRawOutput → onVerify* →
-  // onRetryScheduled → … → onRunSuccess/Failure), all serial within one
-  // run. A single mutable slot per contract is enough — we track the
-  // latest category/issues/repairs/output and emit a per-attempt event in
-  // onRetryScheduled (non-terminal failures) plus a terminal event in
-  // onRunSuccess/Failure.
+  // Per-run scratch space keyed by a per-`accept()` handle — `ctx.runHandle`
+  // when paired with `@withboundary/contract@^1.5.0`, falling back to
+  // `ctx.contractName` against older engines that don't emit a handle.
+  // Keying by handle (not contractName) means concurrent calls of the
+  // same contract each get isolated state, which matters whenever a
+  // single contract instance is shared across parallel requests; the
+  // contractName fallback preserves prior single-call-at-a-time behavior
+  // for consumers still on contract 1.4.x.
   const runState = new Map<string, RunState>();
+
+  // Read the per-call key off any hook ctx. Typed permissively so this
+  // file compiles against contract 1.4.x (no runHandle on the type) while
+  // still picking up the field at runtime under 1.5.x.
+  const stateKey = (ctx: { contractName: string }): string => {
+    const handle = (ctx as { runHandle?: unknown }).runHandle;
+    return typeof handle === "string" && handle.length > 0
+      ? handle
+      : ctx.contractName;
+  };
+
+  // Build the constant fields every wire event carries — identity, model,
+  // contract shape — so per-hook emit calls only have to specify what's
+  // attempt-specific. Centralizing prevents drift between accepted and
+  // failed event paths.
+  const commonEvent = (
+    state: RunState | undefined,
+    contractName: string,
+  ): Pick<
+    BoundaryLogEventBase,
+    "runId" | "contractName" | "model" | "rulesCount" | "schema" | "rules"
+  > => ({
+    runId: state?.runId ?? createRunId(),
+    contractName,
+    model: state?.model ?? defaultModel,
+    rulesCount: state?.rulesCount,
+    schema: state?.schema,
+    rules: state?.rules,
+  });
+
+  const freshAttempt = (input: unknown): AttemptScratch => ({
+    startedAt: nowMs(),
+    input,
+    output: undefined,
+    failure: undefined,
+    repair: undefined,
+  });
 
   return {
     onRunStart(ctx) {
-      runState.set(ctx.contractName, {
+      runState.set(stateKey(ctx), {
         runId: createRunId(),
         startedAt: nowMs(),
-        attemptStartedAt: nowMs(),
         maxAttempts: ctx.maxAttempts,
-        latestRepairs: [],
-        latestCategory: undefined,
-        latestIssues: undefined,
-        latestRuleFailures: undefined,
-        latestInput: undefined,
-        latestOutput: undefined,
         rulesCount: ctx.rulesCount,
         model: ctx.model ?? defaultModel,
         schema: ctx.schema,
         rules: ctx.rules,
+        attempt: freshAttempt(undefined),
       });
     },
     onAttemptStart(ctx) {
-      // The schema-derived (and repair-augmented) prompt the contract sends
-      // to the model on this attempt. This is the closest single artifact to
-      // "what was sent in" that the SDK can observe without intercepting
-      // the user's RunFn — store it as the candidate `input` and let
-      // applyCapture decide whether it ships.
-      const state = runState.get(ctx.contractName);
+      // Allocate a fresh attempt scratch — never mutate the previous
+      // attempt's slot. This is the single point where per-attempt data
+      // is bound; nothing else in the logger can carry forward state from
+      // a prior attempt into a subsequent emit.
+      const state = runState.get(stateKey(ctx));
       if (state) {
-        state.latestInput = ctx.instructions;
-        state.attemptStartedAt = nowMs();
+        state.attempt = freshAttempt(ctx.instructions);
       }
     },
     onCleanedOutput(ctx) {
@@ -165,130 +205,107 @@ export function createBoundaryLogger<T = unknown>(
       // value), pre-validation. Cheaper to keep than the raw string and
       // matches what users typically want to inspect on validation failures.
       // Overridden by onVerifySuccess below when the run succeeds.
-      const state = runState.get(ctx.contractName);
+      const state = runState.get(stateKey(ctx));
       if (state) {
-        state.latestOutput = ctx.cleaned;
+        state.attempt.output = ctx.cleaned;
       }
     },
     onVerifySuccess(ctx) {
       // Prefer the typed/validated payload over the raw cleaned value when
       // the run accepts — same data, but post-coercion. This is what the
       // user's app would actually consume.
-      const state = runState.get(ctx.contractName);
+      const state = runState.get(stateKey(ctx));
       if (state) {
-        state.latestOutput = ctx.data;
-      }
-    },
-    onRepairGenerated(ctx) {
-      const state = runState.get(ctx.contractName);
-      if (state) {
-        state.latestRepairs = [
-          { role: "user", content: ctx.repairMessage },
-        ];
-        state.latestCategory = ctx.category;
+        state.attempt.output = ctx.data;
       }
     },
     onVerifyFailure(ctx) {
-      const state = runState.get(ctx.contractName);
+      const state = runState.get(stateKey(ctx));
       if (state) {
-        state.latestCategory = ctx.category;
-        state.latestIssues = ctx.issues;
-        state.latestRuleFailures = ctx.ruleIssues
-          ? ctx.ruleIssues.map((issue) => issue.rule.name)
-          : undefined;
+        state.attempt.failure = {
+          category: ctx.category,
+          issues: ctx.issues,
+          ruleFailures: ctx.ruleIssues
+            ? ctx.ruleIssues.map((issue) => issue.rule.name)
+            : undefined,
+        };
+      }
+    },
+    onRepairGenerated(ctx) {
+      // The repair is the message that will be sent to the model BEFORE
+      // the next attempt. It belongs to the failed attempt that triggered
+      // it — that's how the dashboard renders "REPAIR (for attempt N+1)"
+      // under attempt N's card.
+      const state = runState.get(stateKey(ctx));
+      if (state) {
+        state.attempt.repair = [{ role: "user", content: ctx.repairMessage }];
       }
     },
     onRetryScheduled(ctx) {
-      // Non-terminal failure that's about to be retried. Emit a per-attempt
-      // event with all the data we accumulated for this attempt: failed
-      // output, failed rules, and the repair message we're about to send to
-      // the model. Then reset per-attempt scratch so the next attempt's
-      // snapshot starts clean.
-      const state = runState.get(ctx.contractName);
+      // Mid-run failure that's about to be retried. Emit a per-attempt
+      // event from this attempt's scratch — never mutated, so there's no
+      // post-emit reset to remember.
+      const state = runState.get(stateKey(ctx));
       if (!state) return;
+      const att = state.attempt;
+      const failure = att.failure;
+      // VerifyFailure must have populated `failure` before retryScheduled
+      // fires — this is a contract-engine invariant. Fall back to the ctx
+      // category if the SDK is paired with an engine that diverges.
       emit({
-        runId: state.runId,
+        ...commonEvent(state, ctx.contractName),
+        ok: false,
         final: false,
-        contractName: ctx.contractName,
         attempt: ctx.attempt,
         maxAttempts: state.maxAttempts,
-        ok: false,
-        durationMs: nowMs() - state.attemptStartedAt,
-        input: state.latestInput,
-        output: state.latestOutput,
-        category: ctx.category ?? state.latestCategory,
-        issues: state.latestIssues,
-        ruleFailures: state.latestRuleFailures,
-        repairs:
-          state.latestRepairs && state.latestRepairs.length > 0
-            ? state.latestRepairs
-            : undefined,
-        model: state.model ?? defaultModel,
-        rulesCount: state.rulesCount,
-        schema: state.schema,
-        rules: state.rules,
+        durationMs: nowMs() - att.startedAt,
+        input: att.input,
+        output: att.output,
+        category: failure?.category ?? ctx.category,
+        issues: failure?.issues ?? [],
+        ruleFailures: failure?.ruleFailures,
+        repairs: att.repair,
       });
-      // Reset per-attempt accumulators so the next attempt's data doesn't
-      // leak into either subsequent per-attempt events or the terminal one.
-      // Schema/rules/runId/model persist for the run's lifetime.
-      state.latestOutput = undefined;
-      state.latestIssues = undefined;
-      state.latestRuleFailures = undefined;
-      state.latestCategory = undefined;
-      state.latestRepairs = [];
-      // latestInput resets when the next onAttemptStart fires.
     },
     onRunSuccess(ctx) {
-      const state = runState.get(ctx.contractName);
+      const state = runState.get(stateKey(ctx));
+      const att = state?.attempt;
+      // AcceptedEvent shape — type system prevents leaking failure metadata
+      // here. `final: true` is structural: an accepted attempt always
+      // terminates the run.
       emit({
-        runId: state?.runId ?? createRunId(),
+        ...commonEvent(state, ctx.contractName),
+        ok: true,
         final: true,
-        contractName: ctx.contractName,
         attempt: ctx.attempts,
         maxAttempts: state?.maxAttempts ?? ctx.attempts,
-        ok: true,
         durationMs: ctx.totalDurationMs,
-        input: state?.latestInput,
-        output: state?.latestOutput ?? ctx.data,
-        repairs:
-          state?.latestRepairs && state.latestRepairs.length > 0
-            ? state.latestRepairs
-            : undefined,
-        model: state?.model ?? defaultModel,
-        rulesCount: state?.rulesCount,
-        schema: state?.schema,
-        rules: state?.rules,
+        input: att?.input,
+        output: att?.output ?? ctx.data,
       });
-      runState.delete(ctx.contractName);
+      runState.delete(stateKey(ctx));
     },
     onRunFailure(ctx) {
-      const state = runState.get(ctx.contractName);
+      const state = runState.get(stateKey(ctx));
+      const att = state?.attempt;
+      const failure = att?.failure;
+      // Terminal failure ships the last attempt's failure attribution and
+      // its output for forensic value. No `repairs` — there is no next
+      // attempt to repair toward; the FailedEvent shape allows omitting it.
       emit({
-        runId: state?.runId ?? createRunId(),
+        ...commonEvent(state, ctx.contractName),
+        ok: false,
         final: true,
-        contractName: ctx.contractName,
         attempt: ctx.attempts,
         maxAttempts: state?.maxAttempts ?? ctx.attempts,
-        ok: false,
         durationMs: ctx.totalDurationMs,
-        input: state?.latestInput,
-        // On failure we ship the last cleaned output we saw — usually from
-        // the final attempt that triggered this terminal failure. Helps the
-        // user see *what* the model produced on the way to giving up.
-        output: state?.latestOutput,
-        category: ctx.category ?? state?.latestCategory,
-        issues: state?.latestIssues,
-        ruleFailures: state?.latestRuleFailures,
-        repairs:
-          state?.latestRepairs && state.latestRepairs.length > 0
-            ? state.latestRepairs
-            : undefined,
-        model: state?.model ?? defaultModel,
-        rulesCount: state?.rulesCount,
-        schema: state?.schema,
-        rules: state?.rules,
+        input: att?.input,
+        output: att?.output,
+        category: failure?.category ?? ctx.category ?? "UNKNOWN",
+        issues: failure?.issues ?? [],
+        ruleFailures: failure?.ruleFailures,
       });
-      runState.delete(ctx.contractName);
+      runState.delete(stateKey(ctx));
     },
 
     async flush(timeoutMs?: number) {
@@ -301,31 +318,41 @@ export function createBoundaryLogger<T = unknown>(
   };
 }
 
+// Per-attempt scratch. Reallocated whole on every onAttemptStart, never
+// mutated across attempt boundaries — so a successful attempt's emit can
+// only ever read its own data, regardless of which contract-engine hooks
+// fired and in what order.
+interface AttemptScratch {
+  startedAt: number;
+  // Prompt the contract sent to the model on this attempt (schema- and
+  // repair-augmented). Gated by capture.inputs at emit time.
+  input: unknown;
+  // Latest cleaned/typed model output for this attempt. Set by
+  // onCleanedOutput and upgraded to the validated payload on
+  // onVerifySuccess. Gated by capture.outputs at emit time.
+  output: unknown;
+  // Populated when verify rejects this attempt. Absent on accepted attempts.
+  failure: AttemptFailure | undefined;
+  // The repair message generated for the *next* attempt. Stays undefined
+  // when there is no next attempt (accepted, or terminal failure).
+  repair: Message[] | undefined;
+}
+
+interface AttemptFailure {
+  category: string;
+  issues: string[];
+  ruleFailures: string[] | undefined;
+}
+
 interface RunState {
   // Stable id for this run. Generated in onRunStart and stamped on every
   // event we emit for the run (per-attempt + terminal) so the backend can
   // coalesce them into one run row.
   runId: string;
-  // Wall-clock starts for per-attempt durationMs. attemptStartedAt is reset
-  // each onAttemptStart and consumed by onRetryScheduled.
+  // Wall-clock start for the run, used to compute totalDurationMs on the
+  // terminal event when the contract context doesn't supply one.
   startedAt: number;
-  attemptStartedAt: number;
   maxAttempts: number;
-  latestRepairs: Message[];
-  latestCategory: string | undefined;
-  latestIssues: string[] | undefined;
-  // Rule names that failed on the most recent attempt, extracted from the
-  // structured ruleIssues on onVerifyFailure. Forwarded as `ruleFailures`
-  // so the backend can join on rule_failure_counts.rule_key.
-  latestRuleFailures: string[] | undefined;
-  // Latest prompt the SDK saw the contract send to the model. Captured on
-  // onAttemptStart from ctx.instructions — the schema- (and repair-)
-  // augmented system prompt. Gated by capture.inputs at emit time.
-  latestInput: unknown;
-  // Latest cleaned/typed model output: ctx.cleaned from onCleanedOutput,
-  // upgraded to the validated ctx.data on onVerifySuccess. Gated by
-  // capture.outputs at emit time.
-  latestOutput: unknown;
   rulesCount: number;
   // Effective model for this run — per-call override (ctx.model from
   // contract.accept({ model })) or the logger's default. Undefined means
@@ -336,6 +363,9 @@ interface RunState {
   // subsequent terminal event until the state is cleared at run end.
   schema: SchemaField[] | undefined;
   rules: RuleDefinition[] | undefined;
+  // Current attempt's scratch. Replaced (not mutated) on every
+  // onAttemptStart so per-attempt data has a hard boundary.
+  attempt: AttemptScratch;
 }
 
 interface BuildTransportArgs {

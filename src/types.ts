@@ -27,7 +27,11 @@ export interface RuleDefinition {
   fields?: string[];
 }
 
-export interface BoundaryLogEvent {
+// Common shape every wire event carries — identity, run metadata, capture
+// policy, and the data buckets that ride along regardless of outcome.
+// Specialized below into AcceptedEvent and FailedEvent so failure attribution
+// can only exist on events where it's meaningful.
+export interface BoundaryLogEventBase {
   // identity
   contractName: string;
   environment?: string;
@@ -40,34 +44,15 @@ export interface BoundaryLogEvent {
   // multi-event streaming on the backend.
   runId: string;
 
-  // Terminal flag — `true` on the last event of a run (onRunSuccess /
-  // onRunFailure), `false` on per-attempt failure events emitted between
-  // them. The backend uses it to decide when to enqueue trace-processing
-  // enrichment (terminal events only — per-attempt would double-count).
-  final: boolean;
-
   // run metadata — always sent. Boundary can't represent a run without these.
   // `attempt` is the attempt this event reflects:
   //   - per-attempt event (final=false): the attempt that just failed
   //   - terminal event (final=true): the final attempt count for the run
   attempt: number;
   maxAttempts: number;
-  ok: boolean;
   // Per-attempt event: duration of just this attempt.
   // Terminal event: total duration across all attempts.
   durationMs: number;
-
-  // Failure attribution — always sent. Category/issues/ruleFailures are the
-  // structural answer to "what broke" and ride alongside metadata because
-  // they have the same size and privacy profile (rule names + short messages,
-  // not user data).
-  category?: string;
-  issues?: string[];
-  ruleFailures?: string[];
-
-  // repair context (capture.repairs, default ON — separate toggle because
-  // repair message content frequently quotes output verbatim)
-  repairs?: Array<{ role: string; content: string }>;
 
   // raw data (both default OFF — opt-in only)
   input?: unknown;
@@ -103,6 +88,35 @@ export interface BoundaryLogEvent {
   // render "[REDACTED]" rows authoritatively instead of inferring.
   capture?: CapturePolicy & { redactedFields?: string[] };
 }
+
+// An attempt that satisfied schema and every rule. Always terminal — once an
+// attempt is accepted the contract returns and no further events fire for
+// the run. By construction there is no failure attribution and no repair
+// (a repair is the message sent before the *next* attempt; an accepted
+// attempt has none).
+export interface AcceptedEvent extends BoundaryLogEventBase {
+  ok: true;
+  final: true;
+}
+
+// An attempt that didn't pass. `final=false` is a mid-run event sent before
+// the next retry; `final=true` is the terminal event after max retries are
+// exhausted. Failure attribution is always populated; `repairs` lists the
+// message about to be sent before the next attempt and is therefore present
+// only on non-terminal failures.
+export interface FailedEvent extends BoundaryLogEventBase {
+  ok: false;
+  final: boolean;
+  category: string;
+  issues: string[];
+  ruleFailures?: string[];
+  repairs?: Array<{ role: string; content: string }>;
+}
+
+// Tagged union on `ok`. The backend's Zod schema mirrors this shape, so any
+// runtime drift (e.g. a hand-rolled emitter that paired ok=true with a stray
+// ruleFailures field) is rejected at /v1/ingest with a 400.
+export type BoundaryLogEvent = AcceptedEvent | FailedEvent;
 
 // Which optional data the SDK is allowed to ship. Structural run metadata
 // (contract name, attempt, duration, ok, category, issues, rule failures) is
