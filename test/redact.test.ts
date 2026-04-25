@@ -4,15 +4,17 @@ import type { BoundaryLogEvent } from "../src/types.js";
 
 const REDACTED = "[REDACTED]";
 
-function baseEvent(overrides: Partial<BoundaryLogEvent> = {}): BoundaryLogEvent {
+function baseEvent(
+  overrides: Partial<Omit<BoundaryLogEvent, "ok" | "final">> = {},
+): BoundaryLogEvent {
   return {
     contractName: "t",
     timestamp: "2026-04-18T00:00:00Z",
     runId: "bnd_run_FiReTjAHAfr4ihQEGG2Ys",
+    ok: true,
     final: true,
     attempt: 1,
     maxAttempts: 3,
-    ok: true,
     durationMs: 5,
     ...overrides,
   };
