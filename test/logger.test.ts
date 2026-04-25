@@ -67,9 +67,10 @@ describe("createBoundaryLogger", () => {
     expect(result.ok).toBe(false);
     await logger.flush(100);
     expect(captured).toHaveLength(1);
-    expect(captured[0]!.ok).toBe(false);
-    expect(captured[0]!.category).toBe("RULE_ERROR");
-    expect(captured[0]!.issues).toEqual(["score too low"]);
+    const event = captured[0]!;
+    if (event.ok) throw new Error("expected failed event");
+    expect(event.category).toBe("RULE_ERROR");
+    expect(event.issues).toEqual(["score too low"]);
   });
 
   it("omits input/output by default", async () => {
@@ -262,10 +263,25 @@ describe("createBoundaryLogger", () => {
 
     expect(captured).toHaveLength(2);
     const perAttempt = captured[0]!;
+    if (perAttempt.ok) throw new Error("expected per-attempt failed event");
     expect(perAttempt.final).toBe(false);
     expect(perAttempt.output).toEqual({ tier: "warm", score: 50 });
     expect(perAttempt.ruleFailures).toEqual(["score_threshold"]);
     expect(perAttempt.category).toBe("RULE_ERROR");
+
+    // The terminal success event must reflect only the accepting attempt.
+    // The discriminated union enforces this at the type level — accessing
+    // `ruleFailures` on an `ok: true` event is a TS error — and the runtime
+    // `in` checks below catch any object-shape leak (e.g. from beforeSend).
+    const terminal = captured[1]!;
+    if (!terminal.ok) throw new Error("expected accepted terminal");
+    expect(terminal.final).toBe(true);
+    expect(terminal.attempt).toBe(2);
+    expect(terminal.output).toEqual({ tier: "hot", score: 95 });
+    expect("ruleFailures" in terminal).toBe(false);
+    expect("issues" in terminal).toBe(false);
+    expect("category" in terminal).toBe(false);
+    expect("repairs" in terminal).toBe(false);
   });
 
   it("emits N events for a N-attempt failure (max retries exhausted)", async () => {
@@ -434,18 +450,19 @@ describe("createBoundaryLogger", () => {
     // Simulate a contract that emits schema + rules on its first onRunStart
     // and then a successful terminal event. sdk-js should stamp both on the
     // outbound BoundaryLogEvent.
+    const handle = "rh_test_a";
     logger.onRunStart?.({
       contractName: "lead-scoring",
+      runHandle: handle,
       maxAttempts: 3,
       rulesCount: 2,
       retry: { maxAttempts: 3, backoff: "none", baseMs: 0 },
-      // Cast to unknown first — these fields are forward-looking and not yet
-      // declared on the installed @withboundary/contract peer.
       schema,
       rules,
-    } as unknown as Parameters<NonNullable<typeof logger.onRunStart>>[0]);
+    });
     logger.onRunSuccess?.({
       contractName: "lead-scoring",
+      runHandle: handle,
       attempts: 1,
       data: { tier: "hot", score: 95 },
       totalDurationMs: 12,
@@ -459,26 +476,29 @@ describe("createBoundaryLogger", () => {
 
   it("forwards failed rule names as ruleFailures on terminal failure events", async () => {
     const { logger, captured } = setup();
+    const handle = "rh_test_b";
     logger.onRunStart?.({
       contractName: "rule-attribution",
+      runHandle: handle,
       maxAttempts: 1,
       rulesCount: 2,
       retry: { maxAttempts: 1, backoff: "none", baseMs: 0 },
     });
     logger.onVerifyFailure?.({
       contractName: "rule-attribution",
+      runHandle: handle,
       attempt: 1,
       category: "RULE_ERROR",
       issues: ["score too low", "tier mismatch"],
       durationMs: 5,
-      // Forward-looking field, not yet on the installed contract peer.
       ruleIssues: [
         { rule: { name: "score_range" }, message: "score too low" },
         { rule: { name: "tier_mismatch", fields: ["tier"] }, message: "tier mismatch" },
       ],
-    } as unknown as Parameters<NonNullable<typeof logger.onVerifyFailure>>[0]);
+    });
     logger.onRunFailure?.({
       contractName: "rule-attribution",
+      runHandle: handle,
       attempts: 1,
       category: "RULE_ERROR",
       message: "two rules failed",
@@ -487,6 +507,8 @@ describe("createBoundaryLogger", () => {
 
     await logger.flush(100);
     expect(captured).toHaveLength(1);
-    expect(captured[0]!.ruleFailures).toEqual(["score_range", "tier_mismatch"]);
+    const ev = captured[0]!;
+    if (ev.ok) throw new Error("expected failed event");
+    expect(ev.ruleFailures).toEqual(["score_range", "tier_mismatch"]);
   });
 });

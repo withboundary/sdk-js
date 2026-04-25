@@ -18,15 +18,17 @@ export function applyCapture(
   event: BoundaryLogEvent,
   capture: CapturePolicy,
 ): BoundaryLogEvent {
+  // `repairs` only exists on FailedEvent — narrow on `ok` so the type
+  // system guides this rather than relying on duck-typed deletes.
+  if (event.ok) {
+    const out: BoundaryLogEvent = { ...event };
+    if (!capture.inputs) delete out.input;
+    if (!capture.outputs) delete out.output;
+    return out;
+  }
   const out: BoundaryLogEvent = { ...event };
-  if (!capture.repairs) {
-    delete out.repairs;
-  }
-  if (!capture.inputs) {
-    delete out.input;
-  }
-  if (!capture.outputs) {
-    delete out.output;
-  }
+  if (!capture.repairs) delete out.repairs;
+  if (!capture.inputs) delete out.input;
+  if (!capture.outputs) delete out.output;
   return out;
 }

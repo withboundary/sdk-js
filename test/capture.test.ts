@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { applyCapture, resolveCapture } from "../src/capture.js";
-import { DEFAULT_CAPTURE, type BoundaryLogEvent } from "../src/types.js";
+import {
+  DEFAULT_CAPTURE,
+  type BoundaryLogEvent,
+  type FailedEvent,
+} from "../src/types.js";
 
-function ev(overrides: Partial<BoundaryLogEvent> = {}): BoundaryLogEvent {
+function ev(overrides: Partial<FailedEvent> = {}): BoundaryLogEvent {
   return {
     contractName: "t",
     timestamp: "2026-04-18T00:00:00Z",
     runId: "bnd_run_FiReTjAHAfr4ihQEGG2Ys",
+    ok: false,
     final: true,
     attempt: 1,
     maxAttempts: 3,
-    ok: false,
     durationMs: 5,
     category: "VALIDATION_ERROR",
     issues: ["bad value"],
@@ -40,6 +44,7 @@ describe("applyCapture", () => {
     expect(out.contractName).toBe("t");
     expect(out.attempt).toBe(1);
     expect(out.durationMs).toBe(5);
+    if (out.ok) throw new Error("expected failed event");
     expect(out.category).toBe("VALIDATION_ERROR");
     expect(out.issues).toEqual(["bad value"]);
   });
@@ -61,6 +66,7 @@ describe("applyCapture", () => {
 
   it("drops repairs when capture.repairs = false", () => {
     const out = applyCapture(ev(), resolveCapture({ repairs: false }));
+    if (out.ok) throw new Error("expected failed event");
     expect(out.repairs).toBeUndefined();
   });
 });

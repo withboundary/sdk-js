@@ -10,3 +10,6 @@ coverage/
 .vscode/
 .idea/
 .npmrc
+
+# Local-only Claude Code instructions (not committed to public repo)
+CLAUDE.md
