@@ -450,10 +450,8 @@ describe("createBoundaryLogger", () => {
     // Simulate a contract that emits schema + rules on its first onRunStart
     // and then a successful terminal event. sdk-js should stamp both on the
     // outbound BoundaryLogEvent.
-    const handle = "rh_test_a";
     logger.onRunStart?.({
       contractName: "lead-scoring",
-      runHandle: handle,
       maxAttempts: 3,
       rulesCount: 2,
       retry: { maxAttempts: 3, backoff: "none", baseMs: 0 },
@@ -462,7 +460,6 @@ describe("createBoundaryLogger", () => {
     });
     logger.onRunSuccess?.({
       contractName: "lead-scoring",
-      runHandle: handle,
       attempts: 1,
       data: { tier: "hot", score: 95 },
       totalDurationMs: 12,
@@ -476,29 +473,26 @@ describe("createBoundaryLogger", () => {
 
   it("forwards failed rule names as ruleFailures on terminal failure events", async () => {
     const { logger, captured } = setup();
-    const handle = "rh_test_b";
     logger.onRunStart?.({
       contractName: "rule-attribution",
-      runHandle: handle,
       maxAttempts: 1,
       rulesCount: 2,
       retry: { maxAttempts: 1, backoff: "none", baseMs: 0 },
     });
     logger.onVerifyFailure?.({
       contractName: "rule-attribution",
-      runHandle: handle,
       attempt: 1,
       category: "RULE_ERROR",
       issues: ["score too low", "tier mismatch"],
       durationMs: 5,
+      // Forward-looking field, not yet on the installed contract peer.
       ruleIssues: [
         { rule: { name: "score_range" }, message: "score too low" },
         { rule: { name: "tier_mismatch", fields: ["tier"] }, message: "tier mismatch" },
       ],
-    });
+    } as unknown as Parameters<NonNullable<typeof logger.onVerifyFailure>>[0]);
     logger.onRunFailure?.({
       contractName: "rule-attribution",
-      runHandle: handle,
       attempts: 1,
       category: "RULE_ERROR",
       message: "two rules failed",

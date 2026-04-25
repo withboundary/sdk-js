@@ -130,12 +130,25 @@ export function createBoundaryLogger<T = unknown>(
     batcher.enqueue(final);
   };
 
-  // Per-run scratch space keyed by `runHandle` — a per-`accept()` id minted
-  // by the contract engine and threaded through every hook ctx. Keying by
-  // handle (not contractName) means concurrent calls of the same contract
-  // each get isolated state, which is essential whenever a single contract
-  // instance is shared across parallel requests.
+  // Per-run scratch space keyed by a per-`accept()` handle — `ctx.runHandle`
+  // when paired with `@withboundary/contract@^1.5.0`, falling back to
+  // `ctx.contractName` against older engines that don't emit a handle.
+  // Keying by handle (not contractName) means concurrent calls of the
+  // same contract each get isolated state, which matters whenever a
+  // single contract instance is shared across parallel requests; the
+  // contractName fallback preserves prior single-call-at-a-time behavior
+  // for consumers still on contract 1.4.x.
   const runState = new Map<string, RunState>();
+
+  // Read the per-call key off any hook ctx. Typed permissively so this
+  // file compiles against contract 1.4.x (no runHandle on the type) while
+  // still picking up the field at runtime under 1.5.x.
+  const stateKey = (ctx: { contractName: string }): string => {
+    const handle = (ctx as { runHandle?: unknown }).runHandle;
+    return typeof handle === "string" && handle.length > 0
+      ? handle
+      : ctx.contractName;
+  };
 
   // Build the constant fields every wire event carries — identity, model,
   // contract shape — so per-hook emit calls only have to specify what's
@@ -166,7 +179,7 @@ export function createBoundaryLogger<T = unknown>(
 
   return {
     onRunStart(ctx) {
-      runState.set(ctx.runHandle, {
+      runState.set(stateKey(ctx), {
         runId: createRunId(),
         startedAt: nowMs(),
         maxAttempts: ctx.maxAttempts,
@@ -182,7 +195,7 @@ export function createBoundaryLogger<T = unknown>(
       // attempt's slot. This is the single point where per-attempt data
       // is bound; nothing else in the logger can carry forward state from
       // a prior attempt into a subsequent emit.
-      const state = runState.get(ctx.runHandle);
+      const state = runState.get(stateKey(ctx));
       if (state) {
         state.attempt = freshAttempt(ctx.instructions);
       }
@@ -192,7 +205,7 @@ export function createBoundaryLogger<T = unknown>(
       // value), pre-validation. Cheaper to keep than the raw string and
       // matches what users typically want to inspect on validation failures.
       // Overridden by onVerifySuccess below when the run succeeds.
-      const state = runState.get(ctx.runHandle);
+      const state = runState.get(stateKey(ctx));
       if (state) {
         state.attempt.output = ctx.cleaned;
       }
@@ -201,13 +214,13 @@ export function createBoundaryLogger<T = unknown>(
       // Prefer the typed/validated payload over the raw cleaned value when
       // the run accepts — same data, but post-coercion. This is what the
       // user's app would actually consume.
-      const state = runState.get(ctx.runHandle);
+      const state = runState.get(stateKey(ctx));
       if (state) {
         state.attempt.output = ctx.data;
       }
     },
     onVerifyFailure(ctx) {
-      const state = runState.get(ctx.runHandle);
+      const state = runState.get(stateKey(ctx));
       if (state) {
         state.attempt.failure = {
           category: ctx.category,
@@ -223,7 +236,7 @@ export function createBoundaryLogger<T = unknown>(
       // the next attempt. It belongs to the failed attempt that triggered
       // it — that's how the dashboard renders "REPAIR (for attempt N+1)"
       // under attempt N's card.
-      const state = runState.get(ctx.runHandle);
+      const state = runState.get(stateKey(ctx));
       if (state) {
         state.attempt.repair = [{ role: "user", content: ctx.repairMessage }];
       }
@@ -232,7 +245,7 @@ export function createBoundaryLogger<T = unknown>(
       // Mid-run failure that's about to be retried. Emit a per-attempt
       // event from this attempt's scratch — never mutated, so there's no
       // post-emit reset to remember.
-      const state = runState.get(ctx.runHandle);
+      const state = runState.get(stateKey(ctx));
       if (!state) return;
       const att = state.attempt;
       const failure = att.failure;
@@ -255,7 +268,7 @@ export function createBoundaryLogger<T = unknown>(
       });
     },
     onRunSuccess(ctx) {
-      const state = runState.get(ctx.runHandle);
+      const state = runState.get(stateKey(ctx));
       const att = state?.attempt;
       // AcceptedEvent shape — type system prevents leaking failure metadata
       // here. `final: true` is structural: an accepted attempt always
@@ -270,10 +283,10 @@ export function createBoundaryLogger<T = unknown>(
         input: att?.input,
         output: att?.output ?? ctx.data,
       });
-      runState.delete(ctx.runHandle);
+      runState.delete(stateKey(ctx));
     },
     onRunFailure(ctx) {
-      const state = runState.get(ctx.runHandle);
+      const state = runState.get(stateKey(ctx));
       const att = state?.attempt;
       const failure = att?.failure;
       // Terminal failure ships the last attempt's failure attribution and
@@ -292,7 +305,7 @@ export function createBoundaryLogger<T = unknown>(
         issues: failure?.issues ?? [],
         ruleFailures: failure?.ruleFailures,
       });
-      runState.delete(ctx.runHandle);
+      runState.delete(stateKey(ctx));
     },
 
     async flush(timeoutMs?: number) {
