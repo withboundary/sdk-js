@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@withboundary/sdk.svg)](https://www.npmjs.com/package/@withboundary/sdk)
 [![license](https://img.shields.io/npm/l/@withboundary/sdk.svg)](https://github.com/withboundary/sdk-js/blob/main/LICENSE)
 
-Observability SDK for [Boundary](https://withboundary.com) — ships LLM contract runs to the Boundary cloud dashboard with batching, retries, and redaction.
+See your acceptance rate, top failing rules, and repair patterns across every contract run — one line of code, no separate observability pipeline to build. Sends LLM contract runs to the [Boundary](https://withboundary.com) dashboard with batching, retries, and redaction. Custom sinks supported for self-hosted setups.
 
 Pairs with [`@withboundary/contract`](https://github.com/withboundary/contract-js) — the correctness engine.
 
@@ -33,7 +33,15 @@ const Schema = z.object({
 const contract = defineContract({
   name: "lead-scoring",  // appears in every trace event
   schema: Schema,
-  rules: [(d) => d.tier !== "hot" || d.score > 70],
+  rules: [
+    {
+      name: "hot_requires_high_score",
+      description: "Hot leads must have a score of at least 70",
+      check: (lead) =>
+        lead.tier !== "hot" || lead.score >= 70
+          || `tier is "hot" but score is ${lead.score} (minimum 70 for hot)`,
+    },
+  ],
   logger,
 });
 
@@ -44,7 +52,7 @@ Missing `apiKey` + no custom `write`? The logger returns `null` and the contract
 
 ## Capture policy
 
-Conservative by default: raw LLM input/output stays off. Only metadata, repair messages, and failure details leave the process.
+Three optional buckets, conservative by default. Raw LLM input and output stay off until you opt in. Run metadata, contract identity, and failure attribution (category + per-rule issues) are always sent — they're the minimum needed to show a run on the dashboard.
 
 ```ts
 createBoundaryLogger({
@@ -53,8 +61,6 @@ createBoundaryLogger({
     inputs: false,    // raw prompts (default: off)
     outputs: false,   // raw completions (default: off)
     repairs: true,    // repair instructions (default: on)
-    errors: true,     // category + issues (default: on)
-    metadata: true,   // name, attempts, duration (default: on)
   },
 });
 ```

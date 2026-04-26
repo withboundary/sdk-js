@@ -8,6 +8,9 @@
     "type": "git",
     "url": "https://github.com/withboundary/sdk-js.git"
   },
+  "bugs": {
+    "url": "https://github.com/withboundary/sdk-js/issues"
+  },
   "keywords": [
     "llm",
     "observability",
