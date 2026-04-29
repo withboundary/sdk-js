@@ -16,7 +16,7 @@ importers:
         version: 25.6.0
       '@withboundary/contract':
         specifier: ^1.4.0
-        version: 1.4.0(zod@4.3.6)
+        version: 1.5.0(zod@4.3.6)
       oxfmt:
         specifier: ^0.47.0
         version: 0.47.0
@@ -822,9 +822,9 @@ packages:
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
 
-  '@withboundary/contract@1.4.0':
-    resolution: {integrity: sha512-dnLONGxzMhXNZ6x9sn+adZj8mPUDJOpVTRqmKF/anbjJwrDV882OL2Tjf0+wA/G0iubsFRkLl+JbQK+fVBOrtA==}
-    engines: {node: '>=18'}
+  '@withboundary/contract@1.5.0':
+    resolution: {integrity: sha512-pwxT5NlNESh2co7DDuZSeHizFgGDmihXW1mXJxzJ6dZTnDBrPq+LwNt/QDd+Xk0yZlQBoRlAqf9/6fpN8aVZvw==}
+    engines: {node: '>=20'}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
@@ -2052,7 +2052,7 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 1.2.0
 
-  '@withboundary/contract@1.4.0(zod@4.3.6)':
+  '@withboundary/contract@1.5.0(zod@4.3.6)':
     dependencies:
       zod: 4.3.6
 
