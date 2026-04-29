@@ -2,20 +2,25 @@
   "name": "@withboundary/sdk",
   "version": "0.4.0",
   "description": "Observability SDK for Boundary — batched trace transport for LLM contract runs.",
-  "license": "MIT",
+  "keywords": [
+    "anthropic",
+    "boundary",
+    "correctness",
+    "llm",
+    "observability",
+    "openai",
+    "tracing"
+  ],
   "homepage": "https://withboundary.com",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/withboundary/sdk-js.git"
   },
-  "keywords": [
-    "llm",
-    "observability",
-    "tracing",
-    "boundary",
-    "correctness",
-    "openai",
-    "anthropic"
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -26,19 +31,29 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
     "changeset": "changeset",
     "release": "pnpm run build && changeset publish",
-    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run build"
+    "prepublishOnly": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test && pnpm run build"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.8",
+    "@types/node": "^25",
+    "@withboundary/contract": "^1.4.0",
+    "oxfmt": "^0.47.0",
+    "oxlint": "^1.62.0",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^2.0.0",
+    "zod": "^4.0.0"
   },
   "peerDependencies": {
     "@withboundary/contract": "^1.4.0"
@@ -47,15 +62,6 @@
     "@withboundary/contract": {
       "optional": true
     }
-  },
-  "devDependencies": {
-    "@changesets/cli": "^2.29.8",
-    "@types/node": "^25",
-    "@withboundary/contract": "^1.4.0",
-    "tsup": "^8.5.1",
-    "typescript": "^6.0.3",
-    "vitest": "^2.0.0",
-    "zod": "^4.0.0"
   },
   "engines": {
     "node": ">=20"

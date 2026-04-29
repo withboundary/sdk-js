@@ -93,9 +93,7 @@ describe("Batcher", () => {
     b.enqueue(ev(5));
     await b.flush();
     const dropWarning = onError.mock.calls.find(
-      (c) =>
-        c[0] instanceof Error &&
-        /dropped 2 events/.test((c[0] as Error).message),
+      (c) => c[0] instanceof Error && /dropped 2 events/.test((c[0] as Error).message),
     );
     expect(dropWarning).toBeTruthy();
     await b.shutdown();

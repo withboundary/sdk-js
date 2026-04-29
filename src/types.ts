@@ -124,9 +124,9 @@ export type BoundaryLogEvent = AcceptedEvent | FailedEvent;
 // all. The flags here govern the three data buckets that can contain
 // user/LLM content and therefore deserve opt-in.
 export interface CapturePolicy {
-  inputs: boolean;   // user → model data              (default OFF)
-  outputs: boolean;  // model → boundary data           (default OFF)
-  repairs: boolean;  // boundary → model retry messages (default ON)
+  inputs: boolean; // user → model data              (default OFF)
+  outputs: boolean; // model → boundary data           (default OFF)
+  repairs: boolean; // boundary → model retry messages (default ON)
 }
 
 export const DEFAULT_CAPTURE: CapturePolicy = {
@@ -192,9 +192,9 @@ export interface BoundaryLoggerOptions {
   // alone, apiKey is not required.
   write?: (events: BoundaryLogEvent[]) => void | Promise<void>;
 
-  // Register process exit hooks to drain the queue. Default true. Feature-
-  // detected per runtime — Node uses beforeExit + SIGTERM, browsers use
-  // beforeunload, edge/workers no-op.
+  // Register lifecycle hooks to drain the queue. Default true. Feature-
+  // detected per runtime: Node uses beforeExit only, browsers use
+  // visibility/pagehide hooks, edge/workers no-op.
   flushOnExit?: boolean;
 
   // Called when the transport drops events permanently (after retries / circuit

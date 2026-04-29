@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { HttpTransport } from "../src/transport/http.js";
 import { AuthError } from "../src/transport/types.js";
-import {
-  CircuitBreakerTransport,
-  BreakerOpenError,
-} from "../src/transport/breaker.js";
+import { CircuitBreakerTransport, BreakerOpenError } from "../src/transport/breaker.js";
 import type { Transport } from "../src/transport/types.js";
 import type { BoundaryLogEvent } from "../src/types.js";
 

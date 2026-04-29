@@ -9,7 +9,6 @@
   Contract 1.4.0 accepts both zod v3 and v4 schemas via an internal adapter, so consumers on either zod major are supported transparently. The SDK itself has no direct zod coupling — all schema typing flows through `@withboundary/contract`'s `ContractSchema<T>`.
 
 - 99f6818: Upgrade to TypeScript 6.
-
   - `devDependencies.typescript`: `^5.5.0` → `^6.0.3`
   - `tsconfig.json`: add `"ignoreDeprecations": "6.0"` to silence `TS5101` for the implicit `baseUrl` that tsup's dts builder emits internally. Will revisit before TS 7.
 
@@ -40,7 +39,6 @@
 ### Minor Changes
 
 - f8e1d5f: Stamp `model` and `rulesCount` onto every BoundaryLogEvent.
-
   - `BoundaryLoggerOptions.model` sets a default LLM model label on every event. Useful for single-model apps.
   - Per-call override flows through from `contract.accept(run, { model })` in `@withboundary/contract@^1.2.0`.
   - `rulesCount` is populated from the contract's `rules` array at runtime.
@@ -58,7 +56,6 @@
 ### Minor Changes
 
 - fdccc46: Initial release of `@withboundary/sdk` — the observability SDK for Boundary contract runs.
-
   - `createBoundaryLogger(options)` returns a `ContractLogger` that plugs into `defineContract({ logger })`.
   - Batched HTTP transport: size + time flush triggers, concurrent-flush coalescing, bounded queue with drop-oldest overflow.
   - Resilient transport: 3 retries with exponential backoff + jitter, `Retry-After` handling on 429, circuit breaker to prevent retry storms during outages, 10s per-attempt timeout.

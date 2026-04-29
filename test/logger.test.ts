@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { defineContract } from "@withboundary/contract";
 import { z } from "zod";
 import { createBoundaryLogger } from "../src/index.js";
@@ -34,9 +34,7 @@ describe("createBoundaryLogger", () => {
       schema: Schema,
       logger,
     });
-    const result = await contract.accept(async () =>
-      JSON.stringify({ tier: "hot", score: 85 }),
-    );
+    const result = await contract.accept(async () => JSON.stringify({ tier: "hot", score: 85 }));
     expect(result.ok).toBe(true);
     await logger.flush(100);
     expect(captured).toHaveLength(1);
@@ -61,9 +59,7 @@ describe("createBoundaryLogger", () => {
       ],
       logger,
     });
-    const result = await contract.accept(async () =>
-      JSON.stringify({ tier: "warm", score: 50 }),
-    );
+    const result = await contract.accept(async () => JSON.stringify({ tier: "warm", score: 50 }));
     expect(result.ok).toBe(false);
     await logger.flush(100);
     expect(captured).toHaveLength(1);
@@ -176,9 +172,7 @@ describe("createBoundaryLogger", () => {
     });
     // tier is not in the enum — schema rejects, but the cleaned object
     // should still surface so users can debug what the model actually said.
-    await contract.accept(async () =>
-      JSON.stringify({ tier: "scalding", score: 50 }),
-    );
+    await contract.accept(async () => JSON.stringify({ tier: "scalding", score: 50 }));
     await logger.flush(100);
 
     expect(captured).toHaveLength(1);
@@ -292,9 +286,7 @@ describe("createBoundaryLogger", () => {
       retry: { maxAttempts: 3, backoff: "none" },
       logger,
     });
-    await contract.accept(async () =>
-      JSON.stringify({ tier: "scalding", score: 200 }),
-    );
+    await contract.accept(async () => JSON.stringify({ tier: "scalding", score: 200 }));
     await logger.flush(100);
 
     expect(captured).toHaveLength(3);
@@ -398,10 +390,9 @@ describe("createBoundaryLogger", () => {
     });
     if (!logger) throw new Error("logger should not be null");
     const contract = defineContract({ name: "model-override", schema: Schema, logger });
-    await contract.accept(
-      async () => JSON.stringify({ tier: "hot", score: 95 }),
-      { model: "claude-haiku-4-5" },
-    );
+    await contract.accept(async () => JSON.stringify({ tier: "hot", score: 95 }), {
+      model: "claude-haiku-4-5",
+    });
     await logger.flush(100);
     expect(captured[0]!.model).toBe("claude-haiku-4-5");
   });

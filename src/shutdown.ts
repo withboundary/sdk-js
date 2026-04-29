@@ -10,8 +10,8 @@
 //             server shutdown, database close) and our silent listener would
 //             race with theirs or keep the process alive past what Ctrl+C
 //             should do. For signal coverage, callers should invoke
-//             `await logger.shutdown({ timeoutMs: 2000 })` from their own
-//             signal handler — see README.
+//             `await logger.shutdown(2000)` from their own signal handler —
+//             see README.
 //
 //   Browser:  visibilitychange (hidden) + pagehide — the modern guidance
 //             (pagehide fires where beforeunload doesn't on mobile/Safari).

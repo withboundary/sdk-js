@@ -35,9 +35,7 @@ describe("redact", () => {
     });
     const { event: out, redactedFields } = redact(e, { fields: ["email", "ssn"] });
     expect((out.input as { user: { email: unknown } }).user.email).toBe(REDACTED);
-    expect(
-      (out.input as { user: { nested: { ssn: unknown } } }).user.nested.ssn,
-    ).toBe(REDACTED);
+    expect((out.input as { user: { nested: { ssn: unknown } } }).user.nested.ssn).toBe(REDACTED);
     expect((out.output as { email: unknown }).email).toBe(REDACTED);
     expect(redactedFields).toEqual(["email", "ssn"]);
   });

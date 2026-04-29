@@ -5,9 +5,7 @@ import type { Transport } from "./types.js";
 // batcher doesn't need to know about custom sinks vs. HTTP — both flow
 // through the same pipeline. Errors bubble up to the caller's onError.
 export class CustomTransport implements Transport {
-  constructor(
-    private readonly write: (events: BoundaryLogEvent[]) => void | Promise<void>,
-  ) {}
+  constructor(private readonly write: (events: BoundaryLogEvent[]) => void | Promise<void>) {}
 
   async send(events: BoundaryLogEvent[]): Promise<void> {
     await this.write(events);
@@ -21,12 +19,8 @@ export class MultiTransport implements Transport {
   constructor(private readonly children: Transport[]) {}
 
   async send(events: BoundaryLogEvent[]): Promise<void> {
-    const results = await Promise.allSettled(
-      this.children.map((t) => t.send(events)),
-    );
-    const rejected = results.find(
-      (r): r is PromiseRejectedResult => r.status === "rejected",
-    );
+    const results = await Promise.allSettled(this.children.map((t) => t.send(events)));
+    const rejected = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
     if (rejected) throw rejected.reason;
   }
 }

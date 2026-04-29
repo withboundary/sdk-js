@@ -90,9 +90,7 @@ export class Batcher {
     const dropped = this.queue.takeDropped();
     if (dropped > 0) {
       this.opts.onError(
-        new Error(
-          `@withboundary/sdk: dropped ${dropped} events — queue exceeded maxQueueSize`,
-        ),
+        new Error(`@withboundary/sdk: dropped ${dropped} events — queue exceeded maxQueueSize`),
       );
     }
   }
