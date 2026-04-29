@@ -1,6 +1,6 @@
 {
   "name": "@withboundary/sdk",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "description": "Observability SDK for Boundary — batched trace transport for LLM contract runs.",
   "keywords": [
     "anthropic",
@@ -12,6 +12,9 @@
     "tracing"
   ],
   "homepage": "https://withboundary.com",
+  "bugs": {
+    "url": "https://github.com/withboundary/sdk-js/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

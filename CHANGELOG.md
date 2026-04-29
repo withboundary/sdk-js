@@ -1,5 +1,41 @@
 # @withboundary/sdk
 
+## 0.5.1
+
+### Patch Changes
+
+- 0b4f51c: Tighter wire-event types: `BoundaryLogEvent` is now a discriminated union on `ok` — `AcceptedEvent` (`ok: true`, `final: true`) and `FailedEvent` (`ok: false`, with `category` and `issues` required). Failure attribution and repair messages can only appear on failed events, enforced at the type level.
+
+  This is a small breaking change for consumers who treated `BoundaryLogEvent` as a single record with optional everything: code that reads `event.category`, `event.ruleFailures`, etc. now needs to narrow on `event.ok` first. The shape on the wire is unchanged for accepted runs (the previously-optional failure fields are simply never set), so backends that already coalesce on `ok` continue to work.
+
+  Adds a regression test covering the rule-fail-then-pass path: the terminal event for an accepted run carries no `ruleFailures` / `issues` / `category` / `repairs`.
+
+- 0b4f51c: Drop Node 18 support. Bump minimum `engines.node` to `>=20` and update the CI matrix to Node 20/22/24.
+
+  Node 18 LTS ended on 2025-04-30. Several dev-only deps (vitest 4+, rolldown) already use Node-20-only APIs (`node:util.styleText`), so Node 18 was effectively unsupported at the dev/tooling level — this just formalizes it for consumers.
+
+  No runtime behavior change; no API change. Users on Node 20+ are unaffected. Mirrors the same drop in `@withboundary/contract@1.4.1`.
+
+- 0b4f51c: Per-call state isolation in the logger. The per-run scratch is now keyed by `ctx.runHandle` (a per-`accept()` id added in `@withboundary/contract@1.5.0`) when present, falling back to `ctx.contractName` against older engines. Concurrent `accept()` calls on the same contract instance — common when a single shared contract serves many parallel requests — each get their own state by construction once paired with `@withboundary/contract@^1.5.0`. Older contract versions retain the prior single-call-at-a-time behavior.
+
+  Per-attempt scratch is also reallocated whole on every `onAttemptStart` so no slot can carry forward across attempts.
+
+## 0.5.0
+
+### Minor Changes
+
+- 2567e8f: Per-attempt streaming with stable `runId`.
+
+  `createBoundaryLogger` now emits **one event per attempt** within a single `contract.accept()` call instead of summarising the run into a single terminal event. Every event carries:
+  - `runId: bnd_run_<nanoid(21)>` — generated client-side in `onRunStart`, stamped on every event for the run so the backend can coalesce them into a single row.
+  - `final: boolean` — `true` on the terminal event (`onRunSuccess` / `onRunFailure`), `false` on per-attempt failure events emitted from `onRetryScheduled` between attempts.
+
+  For a 1-attempt success: still one event (`final: true`). For an N-attempt repaired success: N events sharing one `runId` — N-1 per-attempt failures (`final: false ok: false`) + one terminal success (`final: true ok: true`). The per-attempt events carry the failed attempt's `output`, `category`, `ruleFailures`, and the repair message about to be sent to the model.
+
+  Both `runId` and `final` are required fields on `BoundaryLogEvent`. Anything pinning the wire shape (e.g., a custom `write` sink validating event structure) needs to accept them.
+
+  Receiving sinks that group events by `runId` see one row per run with N attempt entries. Per-attempt events also flow naturally with `capture.inputs` / `capture.outputs` flags — each attempt's input (the prompt sent that round) and output (what the model produced that round) ships when capture is on.
+
 ## 0.3.3
 
 ### Patch Changes

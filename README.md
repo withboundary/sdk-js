@@ -3,7 +3,8 @@
 [![npm version](https://img.shields.io/npm/v/@withboundary/sdk.svg)](https://www.npmjs.com/package/@withboundary/sdk)
 [![license](https://img.shields.io/npm/l/@withboundary/sdk.svg)](https://github.com/withboundary/sdk-js/blob/main/LICENSE)
 
-Opt-in observability for Boundary contract runs.
+See your acceptance rate, top failing rules, and repair patterns across every
+contract run without building a separate observability pipeline.
 
 `@withboundary/contract` is the local acceptance engine: it validates LLM output
 in your process and never sends traffic to Boundary. `@withboundary/sdk` is the
