@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyCapture, resolveCapture } from "../src/capture.js";
-import {
-  DEFAULT_CAPTURE,
-  type BoundaryLogEvent,
-  type FailedEvent,
-} from "../src/types.js";
+import { DEFAULT_CAPTURE, type BoundaryLogEvent, type FailedEvent } from "../src/types.js";
 
 function ev(overrides: Partial<FailedEvent> = {}): BoundaryLogEvent {
   return {
@@ -40,7 +36,10 @@ describe("resolveCapture", () => {
 
 describe("applyCapture", () => {
   it("keeps structural metadata and failure attribution unconditionally", () => {
-    const out = applyCapture(ev(), resolveCapture({ inputs: false, outputs: false, repairs: false }));
+    const out = applyCapture(
+      ev(),
+      resolveCapture({ inputs: false, outputs: false, repairs: false }),
+    );
     expect(out.contractName).toBe("t");
     expect(out.attempt).toBe(1);
     expect(out.durationMs).toBe(5);
@@ -56,10 +55,7 @@ describe("applyCapture", () => {
   });
 
   it("keeps input/output when opted in", () => {
-    const out = applyCapture(
-      ev(),
-      resolveCapture({ inputs: true, outputs: true }),
-    );
+    const out = applyCapture(ev(), resolveCapture({ inputs: true, outputs: true }));
     expect(out.input).toEqual({ prompt: "hello" });
     expect(out.output).toEqual({ answer: "world" });
   });

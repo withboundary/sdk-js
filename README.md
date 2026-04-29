@@ -3,17 +3,25 @@
 [![npm version](https://img.shields.io/npm/v/@withboundary/sdk.svg)](https://www.npmjs.com/package/@withboundary/sdk)
 [![license](https://img.shields.io/npm/l/@withboundary/sdk.svg)](https://github.com/withboundary/sdk-js/blob/main/LICENSE)
 
-See your acceptance rate, top failing rules, and repair patterns across every contract run — one line of code, no separate observability pipeline to build. Sends LLM contract runs to the [Boundary](https://withboundary.com) dashboard with batching, retries, and redaction. Custom sinks supported for self-hosted setups.
+See your acceptance rate, top failing rules, and repair patterns across every
+contract run without building a separate observability pipeline.
 
-Pairs with [`@withboundary/contract`](https://github.com/withboundary/contract-js) — the correctness engine.
+`@withboundary/contract` is the local acceptance engine: it validates LLM output
+in your process and never sends traffic to Boundary. `@withboundary/sdk` is the
+separate telemetry layer you add when you want run history, failing rules,
+repair loops, and model quality signals in Boundary Cloud or a custom sink.
 
 ## Install
 
 ```bash
-npm install @withboundary/contract @withboundary/sdk
+npm install @withboundary/contract @withboundary/sdk zod
 ```
 
-## Quick start
+```bash
+pnpm add @withboundary/contract @withboundary/sdk zod
+```
+
+## Quickstart
 
 ```ts
 import { defineContract } from "@withboundary/contract";
@@ -21,152 +29,235 @@ import { createBoundaryLogger } from "@withboundary/sdk";
 import { z } from "zod";
 
 const logger = createBoundaryLogger({
-  apiKey: process.env.BOUNDARY_API_KEY,  // falls back to this env var
+  apiKey: process.env.BOUNDARY_API_KEY,
   environment: "production",
+  model: "gpt-4.1-mini",
 });
 
-const Schema = z.object({
+const LeadScore = z.object({
   tier: z.enum(["hot", "warm", "cold"]),
   score: z.number().min(0).max(100),
+  reason: z.string(),
 });
 
 const contract = defineContract({
-  name: "lead-scoring",  // appears in every trace event
-  schema: Schema,
+  name: "lead-scoring",
+  schema: LeadScore,
+  logger,
   rules: [
     {
       name: "hot_requires_high_score",
       description: "Hot leads must have a score of at least 70",
+      fields: ["tier", "score"],
       check: (lead) =>
-        lead.tier !== "hot" || lead.score >= 70
-          || `tier is "hot" but score is ${lead.score} (minimum 70 for hot)`,
+        lead.tier !== "hot" ||
+        lead.score >= 70 ||
+        `tier is "hot" but score is ${lead.score} (minimum 70)`,
     },
   ],
-  logger,
 });
 
-const result = await contract.accept(async () => callYourLLM());
+const result = await contract.accept(async (attempt) => {
+  const response = await openai.responses.create({
+    model: "gpt-4.1-mini",
+    input: [
+      { role: "system", content: attempt.instructions },
+      { role: "user", content: "Score this lead: ACME, 500 employees..." },
+      ...attempt.repairs,
+    ],
+  });
+
+  return response.output_text;
+});
 ```
 
-Missing `apiKey` + no custom `write`? The logger returns `null` and the contract runs with no observability — safe for dev.
+If neither `apiKey` nor `write` is configured, `createBoundaryLogger()` returns
+`null`. Passing `null` as the contract logger is safe, so local development can
+keep the same wiring without shipping telemetry.
 
-## Capture policy
+## What Gets Sent
 
-Three optional buckets, conservative by default. Raw LLM input and output stay off until you opt in. Run metadata, contract identity, and failure attribution (category + per-rule issues) are always sent — they're the minimum needed to show a run on the dashboard.
+The SDK emits Boundary log events from contract lifecycle hooks. Every event
+includes structural metadata Boundary needs to group and render a run:
+
+```ts
+type BoundaryLogEvent =
+  | {
+      ok: true;
+      final: true;
+      runId: string;
+      contractName: string;
+      attempt: number;
+      maxAttempts: number;
+      durationMs: number;
+    }
+  | {
+      ok: false;
+      final: boolean;
+      runId: string;
+      contractName: string;
+      attempt: number;
+      maxAttempts: number;
+      durationMs: number;
+      category: string;
+      issues: string[];
+      repairs?: Array<{ role: string; content: string }>;
+      ruleFailures?: string[];
+    };
+```
+
+Accepted events are terminal: `ok: true`, `final: true`. Failed events include
+`category` and `issues`; `final: false` means the contract is retrying, and
+`final: true` means the run exhausted its attempts.
+
+When paired with `@withboundary/contract` versions that emit `runHandle`, the
+SDK keys state by that per-call handle. Concurrent `accept()` calls on the same
+contract instance get isolated run state. Older contract versions fall back to
+the previous contract-name key so existing integrations keep working.
+
+## Capture Policy
+
+Conservative by default: raw prompts and completions stay off unless you opt in.
 
 ```ts
 createBoundaryLogger({
   apiKey,
   capture: {
-    inputs: false,    // raw prompts (default: off)
-    outputs: false,   // raw completions (default: off)
-    repairs: true,    // repair instructions (default: on)
+    inputs: false, // prompt/instructions sent to the model, default off
+    outputs: false, // cleaned or accepted model output, default off
+    repairs: true, // retry repair messages, default on
   },
 });
 ```
 
+Run metadata, failure categories, issue text, rule names, schema shape, and SDK
+metadata are always sent because Boundary cannot render a useful run without
+them. Use redaction or `beforeSend` if those fields need additional policy.
+
 ## Redaction
 
-Three composable layers, applied before any event leaves the process:
+Redaction runs after capture and before batching.
 
 ```ts
 createBoundaryLogger({
   apiKey,
   redact: {
-    fields: ["ssn", "email"],                        // exact key names
-    patterns: [/\b\d{3}-\d{2}-\d{4}\b/],              // regex over strings
-    custom: (value, path) => scrub(value, path),     // last chance
+    fields: ["email", "ssn", "apiKey"],
+    patterns: [/\b\d{3}-\d{2}-\d{4}\b/],
+    custom(value, path) {
+      if (path.join(".") === "input.customerId") return hashCustomerId(value);
+      return value;
+    },
   },
 });
 ```
 
+The SDK also stamps the resolved capture policy and any redacted field names on
+each event so the dashboard can distinguish "not captured" from "captured and
+scrubbed."
+
 ## `beforeSend`
 
-Last-chance hook after capture + redaction. Return `null` to drop:
+Use `beforeSend` for final policy checks, enrichment, or dropping events.
 
 ```ts
 createBoundaryLogger({
   apiKey,
   beforeSend(event) {
-    if (event.contractName === "internal-debug") return null;
-    return { ...event, input: hash(event.input) };
+    if (event.contractName === "local-debug") return null;
+
+    if (!event.ok && event.category === "RULE_ERROR") {
+      return { ...event, model: "policy-reviewed" };
+    }
+
+    return event;
   },
 });
 ```
 
-## Batching
+Exceptions thrown from `beforeSend` are routed to `onError` and do not break the
+contract run.
 
-Events are queued and flushed on size or time, whichever comes first. Concurrent flushes coalesce into one network round-trip.
+## Batching And Flush
+
+Events are queued and flushed on size or time, whichever comes first.
 
 ```ts
-createBoundaryLogger({
+const logger = createBoundaryLogger({
   apiKey,
   batch: {
-    size: 20,           // flush when queue hits this
-    intervalMs: 5000,   // and/or every 5s
-    maxQueueSize: 1000, // drop-oldest when exceeded
+    size: 20,
+    intervalMs: 5000,
+    maxQueueSize: 1000,
   },
 });
+
+await logger?.flush(1000);
 ```
 
-## Shutdown
+`flush(timeoutMs)` drains queued events and returns after the optional deadline.
+`shutdown(timeoutMs)` drains, stops the timer, and disables future sends.
 
-The SDK registers a Node `beforeExit` handler by default. **It does not attach to `SIGTERM` / `SIGINT`** — those belong to your app's lifecycle handlers so they don't race or delay Ctrl+C.
+## Runtime Lifecycle
 
-For graceful shutdown in your own signal handler or serverless runtime:
+Node registers a `beforeExit` drain by default. It does not attach `SIGTERM` or
+`SIGINT` handlers; call `shutdown()` from your own application lifecycle code.
 
 ```ts
 process.once("SIGTERM", async () => {
-  await logger.shutdown(2000);  // flush with a 2s cap
+  await logger?.shutdown(2000);
   process.exit(0);
 });
 ```
 
-Serverless / Edge / Workers have no reliable lifecycle hook. Call `await logger.flush(timeoutMs)` at the end of each request:
+Browser lifecycle hooks are best effort. Edge, Worker, and serverless runtimes
+should call `await logger?.flush(timeoutMs)` before returning each request.
+
+Do not bundle a Boundary API key into browser code. For client-side telemetry,
+send events to your own trusted endpoint with `write`, or proxy them through
+your server.
+
+## Custom Sink
+
+Use `write` to mirror events to a file, test harness, or another observability
+system. When `apiKey` and `write` are both present, both destinations receive
+every flushed batch.
 
 ```ts
-export default {
-  async fetch(request, env) {
-    const result = await handle(request);
-    await logger.flush(1000);
-    return result;
-  },
-};
-```
-
-## Custom sink
-
-Send to a non-Boundary destination (local log, other observability tool) via `write`:
-
-```ts
-createBoundaryLogger({
+const logger = createBoundaryLogger({
   write(events) {
-    for (const e of events) console.log(JSON.stringify(e));
+    for (const event of events) {
+      console.log(JSON.stringify(event));
+    }
   },
 });
 ```
 
-You can combine `apiKey` + `write` — both fire on every flush.
+## Transport Resilience
 
-## Resilience
+The built-in HTTP transport is intentionally small and predictable:
 
-Built in, intentionally simple:
-
-- **Retry w/ jitter** — 3 attempts, exponential backoff (100ms, 400ms, 1600ms +/- 50% jitter) on 5xx / network errors.
-- **`429 + Retry-After`** — honored when the backend rate-limits, capped at 60s per wait.
-- **Circuit breaker** — 5 consecutive failures → open for 30s, then one probe, then closed or reopened. Stops retry storms during backend outages.
-- **Auth failures (401/403)** — logged once, logger disabled. No retry.
-- **Timeout per attempt** — 10s via `AbortController`.
+- Retries 5xx and network errors with jittered exponential backoff.
+- Honors `429 Retry-After`, capped at 60 seconds.
+- Opens a circuit after repeated failures to avoid retry storms.
+- Disables itself on 401/403 and reports the auth failure once.
+- Times out each attempt with `AbortController`.
 
 ## Development
 
 ```bash
 pnpm install
 pnpm typecheck
+pnpm lint
+pnpm format:check
 pnpm test
 pnpm build
 ```
 
-## License
+## Links
 
-[MIT](./LICENSE)
+- [Boundary](https://withboundary.com)
+- [@withboundary/contract](https://github.com/withboundary/contract-js)
+- [Issues](https://github.com/withboundary/sdk-js/issues)
+
+MIT

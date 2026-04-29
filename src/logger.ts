@@ -98,9 +98,7 @@ export function createBoundaryLogger<T = unknown>(
       environment,
       sdk: sdkMeta,
     };
-    const event: BoundaryLogEvent = partial.ok
-      ? { ...base, ...partial }
-      : { ...base, ...partial };
+    const event: BoundaryLogEvent = partial.ok ? { ...base, ...partial } : { ...base, ...partial };
     const gated = applyCapture(event, capture);
     const { event: scrubbed, redactedFields } = redact(gated, options.redact);
 
@@ -145,9 +143,7 @@ export function createBoundaryLogger<T = unknown>(
   // still picking up the field at runtime under 1.5.x.
   const stateKey = (ctx: { contractName: string }): string => {
     const handle = (ctx as { runHandle?: unknown }).runHandle;
-    return typeof handle === "string" && handle.length > 0
-      ? handle
-      : ctx.contractName;
+    return typeof handle === "string" && handle.length > 0 ? handle : ctx.contractName;
   };
 
   // Build the constant fields every wire event carries — identity, model,
@@ -225,9 +221,7 @@ export function createBoundaryLogger<T = unknown>(
         state.attempt.failure = {
           category: ctx.category,
           issues: ctx.issues,
-          ruleFailures: ctx.ruleIssues
-            ? ctx.ruleIssues.map((issue) => issue.rule.name)
-            : undefined,
+          ruleFailures: ctx.ruleIssues ? ctx.ruleIssues.map((issue) => issue.rule.name) : undefined,
         };
       }
     },
@@ -411,8 +405,7 @@ function createRunId(): string {
   return `bnd_run_${randomBase62(21)}`;
 }
 
-const NANOID_ALPHABET =
-  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
+const NANOID_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
 
 function randomBase62(len: number): string {
   // Use crypto.getRandomValues when available (browser, Node ≥18 globally).
@@ -420,7 +413,8 @@ function randomBase62(len: number): string {
   // for 64 chars we're fine — alphabet length divides 256 evenly. For other
   // lengths the bias is negligible at this id size.
   const bytes = new Uint8Array(len);
-  const cryptoObj = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  const cryptoObj = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } })
+    .crypto;
   if (cryptoObj?.getRandomValues) {
     cryptoObj.getRandomValues(bytes);
   } else {

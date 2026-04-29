@@ -26,7 +26,7 @@ export interface HttpTransportOptions {
 // `Retry-After` header (seconds or HTTP date) before the next attempt;
 // other 4xx throw and the caller drops the batch.
 //
-// Keep-alive: native fetch in Node 18+ and every runtime we target reuses
+// Keep-alive: native fetch in Node 20+ and every runtime we target reuses
 // TCP connections automatically — no Agent configuration needed.
 export class HttpTransport implements Transport {
   private readonly endpoint: string;
@@ -48,7 +48,7 @@ export class HttpTransport implements Transport {
     const f = opts.fetch ?? globalThis.fetch;
     if (!f) {
       throw new Error(
-        "@withboundary/sdk: no fetch implementation available. Upgrade to Node 18+ or pass `fetch` via options.",
+        "@withboundary/sdk: no fetch implementation available. Upgrade to Node 20+ or pass `fetch` via options.",
       );
     }
     this.fetchImpl = f;
@@ -141,9 +141,7 @@ function parseRetryAfter(value: string | null): number | null {
 
 function buildUserAgent(): string {
   const runtime = detectRuntime();
-  return runtime
-    ? `${SDK_NAME}/${SDK_VERSION} ${runtime}`
-    : `${SDK_NAME}/${SDK_VERSION}`;
+  return runtime ? `${SDK_NAME}/${SDK_VERSION} ${runtime}` : `${SDK_NAME}/${SDK_VERSION}`;
 }
 
 function detectRuntime(): string {
