@@ -33,7 +33,6 @@
 - 2567e8f: Per-attempt streaming with stable `runId`.
 
   `createBoundaryLogger` now emits **one event per attempt** within a single `contract.accept()` call instead of summarising the run into a single terminal event. Every event carries:
-
   - `runId: bnd_run_<nanoid(21)>` — generated client-side in `onRunStart`, stamped on every event for the run so the backend can coalesce them into a single row.
   - `final: boolean` — `true` on the terminal event (`onRunSuccess` / `onRunFailure`), `false` on per-attempt failure events emitted from `onRetryScheduled` between attempts.
 
@@ -52,7 +51,6 @@
   Contract 1.4.0 accepts both zod v3 and v4 schemas via an internal adapter, so consumers on either zod major are supported transparently. The SDK itself has no direct zod coupling — all schema typing flows through `@withboundary/contract`'s `ContractSchema<T>`.
 
 - 99f6818: Upgrade to TypeScript 6.
-
   - `devDependencies.typescript`: `^5.5.0` → `^6.0.3`
   - `tsconfig.json`: add `"ignoreDeprecations": "6.0"` to silence `TS5101` for the implicit `baseUrl` that tsup's dts builder emits internally. Will revisit before TS 7.
 
@@ -83,7 +81,6 @@
 ### Minor Changes
 
 - f8e1d5f: Stamp `model` and `rulesCount` onto every BoundaryLogEvent.
-
   - `BoundaryLoggerOptions.model` sets a default LLM model label on every event. Useful for single-model apps.
   - Per-call override flows through from `contract.accept(run, { model })` in `@withboundary/contract@^1.2.0`.
   - `rulesCount` is populated from the contract's `rules` array at runtime.
